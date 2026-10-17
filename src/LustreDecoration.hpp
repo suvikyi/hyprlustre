@@ -30,7 +30,7 @@ class CLustreDecoration final : public IHyprWindowDecoration {
 
     void stateChanged(bool focused, bool urgent, const SLustreConfig& config, CLustreAnimation::Time now);
     void refreshAnimation(bool focused, bool urgent, const SLustreConfig& config, CLustreAnimation::Time now);
-    bool animate(CLustreAnimation::Time now);
+    bool animate(const SLustreConfig& config, CLustreAnimation::Time now);
     void resetAnimation(bool focused, bool urgent, CLustreAnimation::Time now);
 
   private:

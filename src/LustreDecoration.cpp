@@ -99,12 +99,16 @@ uniform float uRoundingPower;
 uniform float uOpacity;
 uniform float uLightness;
 uniform float uSaturation;
+uniform float uChroma;
+uniform float uHue;
 uniform vec2 uTintChroma;
 uniform float uTintStrength;
 uniform float uOrbitPhase;
 uniform float uOrbitLength;
 uniform float uOrbitLightness;
 uniform float uOrbitSaturation;
+uniform float uOrbitChroma;
+uniform float uOrbitHue;
 uniform float uOrbitOpacity;
 uniform float uOrbitAmount;
 uniform vec2 uOrbitTintChroma;
@@ -312,7 +316,7 @@ float orbitCoverage(vec2 point, vec2 halfSize, float rounding, float thickness, 
     float feather = min(max(1.0, perimeter * 0.01), segmentLength * 0.5);
     return smoothstep(0.0, feather, distance) * (1.0 - smoothstep(segmentLength - feather, segmentLength, distance)) * uOrbitAmount;
 }
-vec4 transformSample(vec4 sampleColor, float lightness, float saturation, vec2 tintChroma, float tintStrength) {
+vec4 transformSample(vec4 sampleColor, float lightness, float saturation, float chroma, float hue, vec2 tintChroma, float tintStrength) {
     if (sampleColor.a <= 0.001)
         return sampleColor;
     vec3 unpremultiplied = sampleColor.rgb / max(sampleColor.a, 0.001);
@@ -327,7 +331,19 @@ vec4 transformSample(vec4 sampleColor, float lightness, float saturation, vec2 t
     normalized = clamp(normalized / peak, vec3(0.0), vec3(1.0));
     vec3 lab = linearToOklab(normalized);
     lab.x = clamp(lab.x + lightness, 0.0, 1.0);
-    lab.yz *= saturation;
+    // Rotate hue in the OKLab (a, b) plane, then scale the chroma magnitude and
+    // offset it by `chroma`. The offset applies only to chroma the sample
+    // already has: a neutral sample has no hue, so it stays neutral instead of
+    // being pushed toward an arbitrary one. Gating the offset keeps that
+    // transition smooth for near-neutral samples.
+    float magnitude = length(lab.yz);
+    vec2 direction = magnitude > 0.000001 ? lab.yz / magnitude : vec2(0.0);
+    float angle = radians(hue);
+    float cosine = cos(angle);
+    float sine = sin(angle);
+    vec2 rotated = vec2(cosine * direction.x - sine * direction.y, sine * direction.x + cosine * direction.y);
+    float offset = chroma * smoothstep(0.0, 0.02, magnitude);
+    lab.yz = rotated * max(magnitude * saturation + offset, 0.0);
     if (tintStrength > 0.0)
         lab.yz = mix(lab.yz, tintChroma, tintStrength);
     vec3 adjusted = compressChroma(lab.x, lab.yz) * (peak * reference);
@@ -374,13 +390,13 @@ void main() {
         discard;
     float effectCoverage = uOutset ? 1.0 : coverage;
     vec4 baseColor = sampleColor;
-    if (uOpacity > 0.0 && (uLightness != 0.0 || uSaturation != 1.0 || uTintStrength > 0.0)) {
-        vec4 transformed = transformSample(sampleColor, uLightness, uSaturation, uTintChroma, uTintStrength);
+    if (uOpacity > 0.0 && (uLightness != 0.0 || uSaturation != 1.0 || uChroma != 0.0 || uHue != 0.0 || uTintStrength > 0.0)) {
+        vec4 transformed = transformSample(sampleColor, uLightness, uSaturation, uChroma, uHue, uTintChroma, uTintStrength);
         baseColor = mix(sampleColor, transformed, clamp(uOpacity * effectCoverage, 0.0, 1.0));
     }
     float orbitMask = orbitCoverage(point, halfSize, uRounding, uThickness, power);
     if (orbitMask > 0.0) {
-        vec4 orbitTransformed = transformSample(sampleColor, uOrbitLightness, uOrbitSaturation, uOrbitTintChroma, uOrbitTintStrength);
+        vec4 orbitTransformed = transformSample(sampleColor, uOrbitLightness, uOrbitSaturation, uOrbitChroma, uOrbitHue, uOrbitTintChroma, uOrbitTintStrength);
         vec4 orbitColor = mix(sampleColor, orbitTransformed, clamp(uOrbitOpacity * effectCoverage, 0.0, 1.0));
         fragColor = mix(baseColor, orbitColor, orbitMask);
     } else {
@@ -406,12 +422,16 @@ void main() {
         GLint opacity = -1;
         GLint lightness = -1;
         GLint saturation = -1;
+        GLint chroma = -1;
+        GLint hue = -1;
         GLint tintChroma = -1;
         GLint tintStrength = -1;
         GLint orbitPhase = -1;
         GLint orbitLength = -1;
         GLint orbitLightness = -1;
         GLint orbitSaturation = -1;
+        GLint orbitChroma = -1;
+        GLint orbitHue = -1;
         GLint orbitOpacity = -1;
         GLint orbitAmount = -1;
         GLint orbitTintChroma = -1;
@@ -488,6 +508,13 @@ void main() {
         texture->setTexParameter(GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         texture->unbind();
         return true;
+    }
+
+    // Hyprland picks the blur source for a window: the shared pre-window cache
+    // (tiled windows with new_optimizations, or xray) or a live blur of the
+    // framebuffer. Ask it so the outset matches whatever the window itself gets.
+    bool outsetUsesSharedBlur(const PHLWINDOW& window) {
+        return g_pHyprRenderer && g_pHyprRenderer->m_renderData.pMonitor && window && g_pHyprRenderer->shouldUseNewBlurOptimizations(nullptr, window);
     }
 
     bool allocateFramebuffer(SP<IFramebuffer>& framebuffer, const std::string& name, int width, int height, DRMFormat format,
@@ -646,14 +673,17 @@ class CLustrePassElement final : public IPassElement {
         return {};
     }
 
-    bool needsLiveBlur() override { return false; }
-    bool needsPrecomputeBlur() override { return m_outset && m_snapshotOnly && lustreConfig().outsetBlur; }
+    bool needsLiveBlur() override { return snapshotUsesBlur() && !outsetSnapshotUsesCache(); }
+    bool needsPrecomputeBlur() override { return snapshotUsesBlur() && outsetSnapshotUsesCache(); }
     const char* passName() override { return "lustre"; }
     ePassElementType type() override { return EK_CUSTOM; }
     std::optional<CBox> boundingBox() override { return m_box; }
     bool disableSimplification() override { return true; }
 
   private:
+    bool snapshotUsesBlur() const { return m_outset && m_snapshotOnly && lustreConfig().outsetBlur; }
+    bool outsetSnapshotUsesCache() const { return m_decoration && outsetUsesSharedBlur(m_decoration->m_window.lock()); }
+
     CLustreDecoration* m_decoration = nullptr;
     float            m_alpha = 1.F;
     CBox             m_box;
@@ -691,10 +721,11 @@ void CLustreDecoration::refreshAnimation(bool focused, bool urgent, const SLustr
     damageBorder();
 }
 
-bool CLustreDecoration::animate(CLustreAnimation::Time now) {
+bool CLustreDecoration::animate(const SLustreConfig& config, CLustreAnimation::Time now) {
+    const SLustreBorderConfig* profiles[] = {&config.inset, &config.outset};
     bool running = false;
-    for (auto& animation : m_animations)
-        running = animation.advance(now) || running;
+    for (size_t i = 0; i < m_animations.size(); ++i)
+        running = m_animations[i].advance(*profiles[i], now) || running;
     if (running)
         damageBorder();
     return running;
@@ -812,7 +843,7 @@ void CLustreDecoration::drawPass(PHLMONITOR monitor, float alpha, const CBox& mo
     const auto frameStyle = m_animations[outset ? 1 : 0].style(profile, CLustreAnimation::Clock::now());
     const auto& style = frameStyle.border;
     const auto& orbit = frameStyle.orbit;
-    const bool baseVisible = style.opacity > 0.F && (style.lightness != 0.F || style.saturation != 1.F || style.tintStrength > 0.F || (outset && config.outsetBlur));
+    const bool baseVisible = style.opacity > 0.F && (style.lightness != 0.F || style.saturation != 1.F || style.chroma != 0.F || style.hue != 0.F || style.tintStrength > 0.F || (outset && config.outsetBlur));
     const bool orbitVisible = orbit.amount > 0.F && orbit.length > 0.F;
     if (!baseVisible && !orbitVisible)
         return;
@@ -866,18 +897,6 @@ void CLustreDecoration::drawPass(PHLMONITOR monitor, float alpha, const CBox& mo
     const double requestedSnapshotExtent = std::ceil(std::max(static_cast<double>(thickness), static_cast<double>(rounding) + 1.0));
     const int snapshotExtent = static_cast<int>(std::clamp(requestedSnapshotExtent, 1.0, static_cast<double>(maximumStrip)));
 
-    auto snapshotFramebuffer = framebuffer;
-    if (outset && config.outsetBlur) {
-        // Only the native pre-window cache; never run a per-window blur chain.
-        if (monitor->m_blurFBDirty)
-            return;
-        snapshotFramebuffer = monitor->resources()->m_blurFB;
-        if (!snapshotFramebuffer || !snapshotFramebuffer->getTexture() || snapshotFramebuffer->m_size != framebuffer->m_size)
-            return;
-    }
-    const auto sourceDescription = snapshotFramebuffer->imageDescription();
-    if (!sourceDescription.valid() || sourceDescription->value().icc.present)
-        return;
     const auto defaultDescription = NColorManagement::getDefaultImageDescription();
     if (!defaultDescription.valid() || defaultDescription->value().icc.present)
         return;
@@ -901,6 +920,38 @@ void CLustreDecoration::drawPass(PHLMONITOR monitor, float alpha, const CBox& mo
         borderRegion.intersect(renderData.clipBox);
     if (borderRegion.empty())
         return;
+
+    // The snapshot is only read where the border is damaged, so only now pick the
+    // source: keeps the live blur below off windows that are not being redrawn.
+    // Both passes must agree on the source description, or the shared pixel cache
+    // is reallocated between them, so the cache framebuffer is the reference for
+    // either branch and only the snapshot pass runs the blur.
+    auto snapshotFramebuffer = framebuffer;
+    SP<ITexture> liveBlurTexture;
+    if (outset && config.outsetBlur) {
+        // Hyprland's own choice for this window: tiled windows (with
+        // new_optimizations) and xray rules read the shared pre-window cache,
+        // everything else blurs the framebuffer as it stands.
+        const bool sharedCache = outsetUsesSharedBlur(window);
+        snapshotFramebuffer = monitor->resources()->m_blurFB;
+        if (!snapshotFramebuffer || !snapshotFramebuffer->getTexture() || snapshotFramebuffer->m_size != framebuffer->m_size)
+            return;
+        if (snapshotOnly) {
+            if (sharedCache) {
+                if (monitor->m_blurFBDirty)
+                    return;
+            } else {
+                CRegion blurDamage = renderData.damage.copy().intersect(renderBox);
+                liveBlurTexture = g_pHyprRenderer->blurMainFramebuffer(1.F, &blurDamage);
+                if (!liveBlurTexture || liveBlurTexture->m_size != framebuffer->m_size)
+                    return;
+            }
+        }
+    }
+    const auto sourceDescription = snapshotFramebuffer->imageDescription();
+    if (!sourceDescription.valid() || sourceDescription->value().icc.present)
+        return;
+
     auto* const glFramebuffer = dynamic_cast<CGLFramebuffer*>(snapshotFramebuffer.get());
     if (!glFramebuffer || glFramebuffer->getFBID() == 0)
         return;
@@ -915,9 +966,25 @@ void CLustreDecoration::drawPass(PHLMONITOR monitor, float alpha, const CBox& mo
     if (!outset || snapshotOnly) {
         GLint previousReadFramebuffer = 0;
         glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previousReadFramebuffer);
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, glFramebuffer->getFBID());
+
+        // The live blur result lives in a recycled monitor work buffer, so read
+        // it through a throwaway framebuffer before anything else reuses it.
+        GLuint readFramebuffer = glFramebuffer->getFBID();
+        GLuint temporaryFramebuffer = 0;
+        if (liveBlurTexture && liveBlurTexture->m_texID != 0) {
+            glGenFramebuffers(1, &temporaryFramebuffer);
+            if (temporaryFramebuffer != 0) {
+                glBindFramebuffer(GL_READ_FRAMEBUFFER, temporaryFramebuffer);
+                glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, liveBlurTexture->m_texID, 0);
+                readFramebuffer = temporaryFramebuffer;
+            }
+        }
+
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, readFramebuffer);
         copyWindowSnapshots(snapshots, targetWidth, targetHeight, left, bottom, width, height, snapshotExtent);
         glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previousReadFramebuffer));
+        if (temporaryFramebuffer != 0)
+            glDeleteFramebuffers(1, &temporaryFramebuffer);
     }
     if (snapshotOnly) {
         m_outsetSnapshotReady = true;
@@ -950,6 +1017,8 @@ void CLustreDecoration::drawPass(PHLMONITOR monitor, float alpha, const CBox& mo
     setFloat(uniforms.opacity, overallOpacity);
     setFloat(uniforms.lightness, style.lightness);
     setFloat(uniforms.saturation, style.saturation);
+    setFloat(uniforms.chroma, style.chroma);
+    setFloat(uniforms.hue, style.hue);
     if (style.tintStrength > 0.F) {
         const auto tintChroma = toOklabChroma(style.tintColor, inputSettings.convertMatrix);
         glUniform2f(uniforms.tintChroma, tintChroma[0], tintChroma[1]);
@@ -959,6 +1028,8 @@ void CLustreDecoration::drawPass(PHLMONITOR monitor, float alpha, const CBox& mo
     setFloat(uniforms.orbitLength, orbit.length);
     setFloat(uniforms.orbitLightness, orbit.lightness);
     setFloat(uniforms.orbitSaturation, orbit.saturation);
+    setFloat(uniforms.orbitChroma, orbit.chroma);
+    setFloat(uniforms.orbitHue, orbit.hue);
     setFloat(uniforms.orbitOpacity, overallOrbitOpacity);
     setFloat(uniforms.orbitAmount, orbit.amount);
     if (orbit.tintStrength > 0.F) {
@@ -1083,12 +1154,16 @@ bool initializeLustreRenderer() {
         .opacity = glGetUniformLocation(program, "uOpacity"),
         .lightness = glGetUniformLocation(program, "uLightness"),
         .saturation = glGetUniformLocation(program, "uSaturation"),
+        .chroma = glGetUniformLocation(program, "uChroma"),
+        .hue = glGetUniformLocation(program, "uHue"),
         .tintChroma = glGetUniformLocation(program, "uTintChroma"),
         .tintStrength = glGetUniformLocation(program, "uTintStrength"),
         .orbitPhase = glGetUniformLocation(program, "uOrbitPhase"),
         .orbitLength = glGetUniformLocation(program, "uOrbitLength"),
         .orbitLightness = glGetUniformLocation(program, "uOrbitLightness"),
         .orbitSaturation = glGetUniformLocation(program, "uOrbitSaturation"),
+        .orbitChroma = glGetUniformLocation(program, "uOrbitChroma"),
+        .orbitHue = glGetUniformLocation(program, "uOrbitHue"),
         .orbitOpacity = glGetUniformLocation(program, "uOrbitOpacity"),
         .orbitAmount = glGetUniformLocation(program, "uOrbitAmount"),
         .orbitTintChroma = glGetUniformLocation(program, "uOrbitTintChroma"),
