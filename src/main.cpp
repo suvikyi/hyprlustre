@@ -93,7 +93,7 @@ namespace {
             if (!config.enabled || (!config.inset.enabled && !config.outset.enabled))
                 decoration->resetAnimation(window == focused, window->m_isUrgent, now);
             else
-                running = decoration->animate(now) || running;
+                running = decoration->animate(config, now) || running;
         }
         timer->updateTimeout(running ? std::optional{ANIMATION_TICK} : std::nullopt);
     }
@@ -111,7 +111,7 @@ namespace {
         if (auto* decoration = lustreDecoration(previous)) {
             if (effectsEnabled) {
                 decoration->stateChanged(false, previous->m_isUrgent, config, now);
-                running = decoration->animate(now) || running;
+                running = decoration->animate(config, now) || running;
             } else {
                 decoration->resetAnimation(false, previous->m_isUrgent, now);
             }
@@ -119,7 +119,7 @@ namespace {
         if (auto* decoration = lustreDecoration(focusedWindow)) {
             if (effectsEnabled) {
                 decoration->stateChanged(true, focusedWindow->m_isUrgent, config, now);
-                running = decoration->animate(now) || running;
+                running = decoration->animate(config, now) || running;
             } else {
                 decoration->resetAnimation(true, focusedWindow->m_isUrgent, now);
             }
@@ -142,7 +142,7 @@ namespace {
         }
 
         decoration->stateChanged(focused, urgentWindow->m_isUrgent, config, now);
-        if (animationTimer && decoration->animate(now))
+        if (animationTimer && decoration->animate(config, now))
             animationTimer->updateTimeout(ANIMATION_TICK);
     }
 
@@ -173,7 +173,7 @@ namespace {
         } else {
             decoration->stateChanged(isFocused, window->m_isUrgent, config, now);
         }
-        if (animationTimer && decoration->animate(now))
+        if (animationTimer && decoration->animate(config, now))
             animationTimer->updateTimeout(ANIMATION_TICK);
     }
 
@@ -192,7 +192,7 @@ namespace {
                     decoration->resetAnimation(window == focused, window->m_isUrgent, now);
                 else {
                     decoration->refreshAnimation(window == focused, window->m_isUrgent, config, now);
-                    running = decoration->animate(now) || running;
+                    running = decoration->animate(config, now) || running;
                 }
             }
         }
@@ -279,7 +279,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     for (const auto& window : Desktop::windowState()->windows())
         attachDecoration(window, false);
 
-    return {"lustre", "Hyprlustre visual effects for Hyprland", "Suvikyi", "0.1.0"};
+    return {"lustre", "Hyprlustre visual effects for Hyprland", "Suvikyi", "0.2.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
