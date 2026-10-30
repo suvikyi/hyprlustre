@@ -1,15 +1,15 @@
 #pragma once
 #include <array>
 
-// The shipped look lives in the LUSTRE_*_DEFAULTS seeds below. These members
+// The shipped look lives in the HYPRION_*_DEFAULTS seeds below. These members
 // are inert fallbacks, used only where a seed omits a field. The tint fallback
 // is Hyprland's own default glow blue (`decoration:glow:color`, `33ccffee`).
-struct SLustreTintConfig {
+struct SHyprionTintConfig {
     std::array<float, 3> color = {51.F / 255.F, 204.F / 255.F, 1.F};
     float strength = 0.F;
 };
 
-struct SLustreStateConfig {
+struct SHyprionStateConfig {
     float lightness  = 0.F;
     float saturation = 1.F;
     float chroma     = 0.F;
@@ -19,10 +19,10 @@ struct SLustreStateConfig {
     // beneath it, so it is the one that fades the frost.
     float strength   = 0.F;
     float opacity    = 1.F;
-    SLustreTintConfig tint;
+    SHyprionTintConfig tint;
 };
 
-struct SLustreStyle {
+struct SHyprionStyle {
     float lightness  = 0.F;
     float saturation = 1.F;
     float chroma     = 0.F;
@@ -33,12 +33,12 @@ struct SLustreStyle {
     float tintStrength = 0.F;
 };
 
-struct SLustreMotionConfig {
+struct SHyprionMotionConfig {
     float amount = 0.F;
     int cycles = 1;
 };
 
-struct SLustreOrbitProfile {
+struct SHyprionOrbitProfile {
     bool enabled = false;
     bool clockwise = true;
     // Structural default: the animation divides by this, so it must stay positive.
@@ -50,26 +50,26 @@ struct SLustreOrbitProfile {
     float hue = 0.F;
     float strength = 0.F;
     float opacity = 1.F;
-    SLustreTintConfig tint;
-    SLustreMotionConfig motion;
+    SHyprionTintConfig tint;
+    SHyprionMotionConfig motion;
     // Flare only: presence ramps in over fadeInMs and out over fadeOutMs, both
     // measured from the ends of the single ignition lap.
     float fadeInMs = 0.F;
     float fadeOutMs = 0.F;
 };
 
-struct SLustreOrbitConfig {
-    SLustreOrbitProfile active;
-    SLustreOrbitProfile urgent;
-    SLustreOrbitProfile inactive;
+struct SHyprionOrbitConfig {
+    SHyprionOrbitProfile active;
+    SHyprionOrbitProfile urgent;
+    SHyprionOrbitProfile inactive;
     // One-shot ignition: on focus gain the orbit fades in over `fade.start`,
     // laps exactly once at this profile's speed, and fades out over `fade.finish`
     // (anchored to the end of that lap), then hands back to the focused state's
     // profile — or stays gone if that profile is disabled.
-    SLustreOrbitProfile flare;
+    SHyprionOrbitProfile flare;
 };
 
-struct SLustreOrbitStyle {
+struct SHyprionOrbitStyle {
     float timeMs = 12000.F;
     float length = 0.F;
     float lightness = 0.F;
@@ -84,7 +84,7 @@ struct SLustreOrbitStyle {
     float tintStrength = 0.F;
 };
 
-struct SLustrePulseConfig {
+struct SHyprionPulseConfig {
     bool enabled = false;
     float timeMs = 333.F;
     float lightness = 0.F;
@@ -93,23 +93,23 @@ struct SLustrePulseConfig {
     float hue = 0.F;
     float strength = 0.F;
     float opacity = 1.F;
-    SLustreTintConfig tint;
+    SHyprionTintConfig tint;
 };
 
-struct SLustreBorderConfig {
+struct SHyprionBorderConfig {
     bool enabled = false;
     int size = 1;
-    SLustreStateConfig active;
-    SLustreStateConfig inactive;
-    SLustrePulseConfig pulse;
-    SLustreOrbitConfig orbit;
+    SHyprionStateConfig active;
+    SHyprionStateConfig inactive;
+    SHyprionPulseConfig pulse;
+    SHyprionOrbitConfig orbit;
 };
 
 // Shipped defaults, one set per placement. These are the source of truth for
-// every `plugin.lustre.border.*` default: the registration reads them directly
+// every `plugin.hyprion.border.*` default: the registration reads them directly
 // and a partially missing config falls back to them. `inset` is a translucent
 // 1px glaze; `outset` is a 2px blurred one that tints toward the accent.
-inline const SLustreBorderConfig LUSTRE_INSET_DEFAULTS = {
+inline const SHyprionBorderConfig HYPRION_INSET_DEFAULTS = {
     .enabled = false,
     .size = 1,
     .active = {
@@ -196,7 +196,7 @@ inline const SLustreBorderConfig LUSTRE_INSET_DEFAULTS = {
     },
 };
 
-inline const SLustreBorderConfig LUSTRE_OUTSET_DEFAULTS = {
+inline const SHyprionBorderConfig HYPRION_OUTSET_DEFAULTS = {
     .enabled = true,
     .size = 2,
     .active = {
@@ -283,17 +283,17 @@ inline const SLustreBorderConfig LUSTRE_OUTSET_DEFAULTS = {
     },
 };
 
-struct SLustreFrameStyle {
-    SLustreStyle border;
-    SLustreOrbitStyle orbit;
+struct SHyprionFrameStyle {
+    SHyprionStyle border;
+    SHyprionOrbitStyle orbit;
 };
 
-struct SLustreConfig {
+struct SHyprionConfig {
     bool                enabled = true;
-    SLustreBorderConfig inset = LUSTRE_INSET_DEFAULTS;
-    SLustreBorderConfig outset = LUSTRE_OUTSET_DEFAULTS;
+    SHyprionBorderConfig inset = HYPRION_INSET_DEFAULTS;
+    SHyprionBorderConfig outset = HYPRION_OUTSET_DEFAULTS;
     bool                outsetBlur = true;
 };
 
-bool         registerLustreConfig(void* handle);
-SLustreConfig lustreConfig();
+bool         registerHyprionConfig(void* handle);
+SHyprionConfig hyprionConfig();

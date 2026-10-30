@@ -1,6 +1,6 @@
-# Hyprlustre
+# Hyprion
 
-Hyprlustre is a Hyprland visual-effects plugin; the sampled border is its first effect.
+Hyprion is a Hyprland visual-effects plugin; the sampled border is its first effect.
 
 Rounded inset and outset borders sample the pixels beneath them, transform them in OKLab, and paint the result back over the live border, giving a reactive glaze. Each placement has independent `active`, `inactive`, `pulse`, `tint` and `orbit` settings.
 
@@ -10,11 +10,11 @@ Requires **Hyprland 0.56.2**, matching development headers, and the OpenGL rende
 
 ## Install
 
-Add the published Git repository, then enable Hyprlustre:
+Add the published Git repository, then enable Hyprion:
 
 ```sh
-hyprpm add https://github.com/suvikyi/hyprlustre
-hyprpm enable lustre
+hyprpm add https://github.com/suvikyi/hyprion
+hyprpm enable hyprion
 ```
 
 Hyprpm builds the plugin against headers matching your Hyprland installation; run `hyprpm update` to refresh them.
@@ -26,16 +26,16 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ```
 
-The output is `build/liblustre.so`. A manual build does not register the plugin with Hyprpm.
+The output is `build/libhyprion.so`. A manual build does not register the plugin with Hyprpm.
 
 ## Configure
 
-Everything registers under `plugin.lustre`. `inset` and `outset` are independent — neither inherits from the other, and anything you leave out keeps its shipped default.
+Everything registers under `plugin.hyprion`. `inset` and `outset` are independent — neither inherits from the other, and anything you leave out keeps its shipped default.
 
 ```lua
 hl.config({
   plugin = {
-    lustre = {
+    hyprion = {
       border = {
         outset = {
           enabled = true,

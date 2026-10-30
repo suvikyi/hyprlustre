@@ -1,4 +1,4 @@
-#include "LustreConfig.hpp"
+#include "HyprionConfig.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -140,14 +140,14 @@ namespace {
         return static_cast<Config::INTEGER>(0xFF000000U | (channel(color[0]) << 16) | (channel(color[1]) << 8) | channel(color[2]));
     }
 
-    bool registerTintValues(HANDLE handle, const STintConfigNames& names, STintConfigValues& tint, const SLustreTintConfig& defaults) {
+    bool registerTintValues(HANDLE handle, const STintConfigNames& names, STintConfigValues& tint, const SHyprionTintConfig& defaults) {
         tint.color = colorValue(handle, names.color, "Tint color for this state", tintArgb(defaults.color));
         if (!tint.color)
             return false;
         tint.strength = floatValue(handle, names.strength, "How much to blend toward the tint color (0 disables tinting)", defaults.strength, 0.F, 1.F);
         return static_cast<bool>(tint.strength);
     }
-    bool registerOrbitValues(HANDLE handle, const SOrbitConfigNames& names, SOrbitConfigValues& values, const SLustreOrbitProfile& defaults,
+    bool registerOrbitValues(HANDLE handle, const SOrbitConfigNames& names, SOrbitConfigValues& values, const SHyprionOrbitProfile& defaults,
                              const char* enabledDescription = "Enable the traveling orbit highlight for this state") {
         values.enabled = makeShared<CBoolValue>(configName(names.enabled), enabledDescription, defaults.enabled);
         if (!HyprlandAPI::addConfigValueV2(handle, values.enabled))
@@ -188,7 +188,7 @@ namespace {
         return tint.color && tint.strength;
     }
 
-    SLustreTintConfig tintConfig(const STintConfigValues& tint, float fallbackStrength) {
+    SHyprionTintConfig tintConfig(const STintConfigValues& tint, float fallbackStrength) {
         const auto argb = static_cast<std::uint32_t>(tint.color->value());
         return {
             .color = {
@@ -205,7 +205,7 @@ namespace {
             values.opacity && values.motionAmount && values.motionCycles && tintValuesReady(values.tint);
     }
 
-    SLustreOrbitProfile orbitProfileConfig(const SOrbitConfigValues& values, const SLustreOrbitProfile& fallback) {
+    SHyprionOrbitProfile orbitProfileConfig(const SOrbitConfigValues& values, const SHyprionOrbitProfile& fallback) {
         return {
             .enabled = values.enabled->value(),
             .clockwise = values.clockwise->value(),
@@ -225,7 +225,7 @@ namespace {
         };
     }
 
-    bool registerBorder(HANDLE handle, SBorderValues& values, const std::string& prefix, const SLustreBorderConfig& defaults) {
+    bool registerBorder(HANDLE handle, SBorderValues& values, const std::string& prefix, const SHyprionBorderConfig& defaults) {
         const SOrbitConfigNames ACTIVE_ORBIT_NAMES = {
             .enabled = prefix + ".orbit.active.enabled",
             .clockwise = prefix + ".orbit.active.clockwise",
@@ -393,8 +393,8 @@ namespace {
                                               defaults.orbit.flare.fadeOutMs, 0.F, 120000.F));
     }
 
-    SLustreBorderConfig readBorder(const SBorderValues& values, const SLustreBorderConfig& defaults) {
-        SLustreBorderConfig config = defaults;
+    SHyprionBorderConfig readBorder(const SBorderValues& values, const SHyprionBorderConfig& defaults) {
+        SHyprionBorderConfig config = defaults;
         if (!values.enabled || !values.size || !values.activeLightness || !values.activeSaturation || !values.activeChroma || !values.activeHue || !values.activeStrength ||
             !values.activeOpacity || !values.inactiveLightness ||
             !values.inactiveSaturation || !values.inactiveChroma || !values.inactiveHue || !values.inactiveStrength || !values.inactiveOpacity ||
@@ -450,22 +450,22 @@ namespace {
     }
 }
 
-bool registerLustreConfig(HANDLE handle) {
-    enabled = makeShared<CBoolValue>("plugin:lustre:enabled", "Enable Hyprlustre visual effects", true);
-    outsetBlur = makeShared<CBoolValue>("plugin:lustre:border.outset.blur", "Sample Hyprland's blur for this window (requires blur)", true);
+bool registerHyprionConfig(HANDLE handle) {
+    enabled = makeShared<CBoolValue>("plugin:hyprion:enabled", "Enable Hyprion visual effects", true);
+    outsetBlur = makeShared<CBoolValue>("plugin:hyprion:border.outset.blur", "Sample Hyprland's blur for this window (requires blur)", true);
     return HyprlandAPI::addConfigValueV2(handle, enabled) && HyprlandAPI::addConfigValueV2(handle, outsetBlur) &&
-        registerBorder(handle, insetValues, "plugin:lustre:border.inset", LUSTRE_INSET_DEFAULTS) &&
-        registerBorder(handle, outsetValues, "plugin:lustre:border.outset", LUSTRE_OUTSET_DEFAULTS);
+        registerBorder(handle, insetValues, "plugin:hyprion:border.inset", HYPRION_INSET_DEFAULTS) &&
+        registerBorder(handle, outsetValues, "plugin:hyprion:border.outset", HYPRION_OUTSET_DEFAULTS);
 }
 
-SLustreConfig lustreConfig() {
-    SLustreConfig config;
+SHyprionConfig hyprionConfig() {
+    SHyprionConfig config;
     if (enabled) config.enabled = enabled->value();
-    config.inset = readBorder(insetValues, LUSTRE_INSET_DEFAULTS);
-    config.outset = readBorder(outsetValues, LUSTRE_OUTSET_DEFAULTS);
+    config.inset = readBorder(insetValues, HYPRION_INSET_DEFAULTS);
+    config.outset = readBorder(outsetValues, HYPRION_OUTSET_DEFAULTS);
     static const auto NATIVE_BLUR = CConfigValue<Config::INTEGER>("decoration:blur:enabled");
     // Which blur source the outset samples is Hyprland's decision, not ours
-    // (see CLustreDecoration::drawPass), so only the global blur toggle matters here.
+    // (see CHyprionDecoration::drawPass), so only the global blur toggle matters here.
     config.outsetBlur = config.enabled && config.outset.enabled && outsetBlur && outsetBlur->value() && *NATIVE_BLUR;
     return config;
 }

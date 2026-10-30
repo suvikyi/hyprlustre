@@ -2,9 +2,9 @@
 
 ## Versioning and releases
 
-Use Semantic Versioning 2.0.0 for Lustre. Keep releases pre-1.0 until the user-facing configuration and effect behavior are considered stable.
+Use Semantic Versioning 2.0.0 for Hyprion. Keep releases pre-1.0 until the user-facing configuration and effect behavior are considered stable.
 
-The consumer-facing contract includes the Hyprpm plugin ID (`lustre`), Lua settings under `plugin.lustre.*`, documented defaults and effect behavior, and the published install identity.
+The consumer-facing contract includes the Hyprpm plugin ID (`hyprion`), Lua settings under `plugin.hyprion.*`, documented defaults and effect behavior, and the published install identity.
 
 ### Before 1.0.0
 

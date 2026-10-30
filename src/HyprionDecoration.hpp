@@ -1,21 +1,21 @@
 #pragma once
 
-#include "LustreAnimation.hpp"
+#include "HyprionAnimation.hpp"
 
 #include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/output/Monitor.hpp>
 #include <hyprland/src/render/decorations/IHyprWindowDecoration.hpp>
 
-class CLustrePassElement;
+class CHyprionPassElement;
 
-bool  initializeLustreRenderer();
-void  destroyLustreRenderer();
-void  destroyLustreMonitor(PHLMONITOR monitor);
+bool  initializeHyprionRenderer();
+void  destroyHyprionRenderer();
+void  destroyHyprionMonitor(PHLMONITOR monitor);
 
-class CLustreDecoration final : public IHyprWindowDecoration {
+class CHyprionDecoration final : public IHyprWindowDecoration {
   public:
-    explicit CLustreDecoration(PHLWINDOW window);
-    ~CLustreDecoration() override;
+    explicit CHyprionDecoration(PHLWINDOW window);
+    ~CHyprionDecoration() override;
 
     SDecorationPositioningInfo getPositioningInfo() override;
     void                       onPositioningReply(const SDecorationPositioningReply& reply) override;
@@ -28,10 +28,10 @@ class CLustreDecoration final : public IHyprWindowDecoration {
     uint64_t                   getDecorationFlags() override;
     std::string                getDisplayName() override;
 
-    void stateChanged(bool focused, bool urgent, const SLustreConfig& config, CLustreAnimation::Time now);
-    void refreshAnimation(bool focused, bool urgent, const SLustreConfig& config, CLustreAnimation::Time now);
-    bool animate(const SLustreConfig& config, CLustreAnimation::Time now);
-    void resetAnimation(bool focused, bool urgent, CLustreAnimation::Time now);
+    void stateChanged(bool focused, bool urgent, const SHyprionConfig& config, CHyprionAnimation::Time now);
+    void refreshAnimation(bool focused, bool urgent, const SHyprionConfig& config, CHyprionAnimation::Time now);
+    bool animate(const SHyprionConfig& config, CHyprionAnimation::Time now);
+    void resetAnimation(bool focused, bool urgent, CHyprionAnimation::Time now);
 
   private:
     CBox monitorLocalBox(PHLMONITOR monitor) const;
@@ -40,11 +40,11 @@ class CLustreDecoration final : public IHyprWindowDecoration {
     void  updateOrbitArcTable(float power);
 
     PHLWINDOWREF m_window;
-    std::array<CLustreAnimation, 2> m_animations;
+    std::array<CHyprionAnimation, 2> m_animations;
     int m_outsetExtent = 0;
     bool m_outsetSnapshotReady = false;
     std::array<float, 65> m_orbitArcTable{};
     float m_orbitArcPower = -1.F;
 
-    friend class CLustrePassElement;
+    friend class CHyprionPassElement;
 };

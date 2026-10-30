@@ -1,7 +1,7 @@
 #define WLR_USE_UNSTABLE
 
-#include "LustreConfig.hpp"
-#include "LustreDecoration.hpp"
+#include "HyprionConfig.hpp"
+#include "HyprionDecoration.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -42,7 +42,7 @@ namespace {
         auto data = reinterpret_cast<Original>(shadowHook->m_original)(shadow, monitor, alpha);
         if (!data.valid || data.rounding <= 0.F)
             return data;
-        const auto config = lustreConfig();
+        const auto config = hyprionConfig();
         if (!config.enabled || !config.outset.enabled)
             return data;
         const auto owner = shadowWindows.find(shadow);
@@ -58,12 +58,12 @@ namespace {
         return data;
     }
 
-    CLustreDecoration* lustreDecoration(const PHLWINDOW& window) {
+    CHyprionDecoration* hyprionDecoration(const PHLWINDOW& window) {
         if (!window || !window->m_isMapped)
             return nullptr;
         for (const auto& decoration : window->m_windowDecorations) {
-            if (auto* lustre = dynamic_cast<CLustreDecoration*>(decoration.get()))
-                return lustre;
+            if (auto* hyprion = dynamic_cast<CHyprionDecoration*>(decoration.get()))
+                return hyprion;
         }
         return nullptr;
     }
@@ -71,7 +71,7 @@ namespace {
     void drawShadow(CHyprDropShadowDecoration* shadow, PHLMONITOR monitor, const float& alpha) {
         const auto owner = shadowWindows.find(shadow);
         if (owner != shadowWindows.end()) {
-            if (auto* decoration = lustreDecoration(owner->second.lock()))
+            if (auto* decoration = hyprionDecoration(owner->second.lock()))
                 decoration->drawOutset(monitor, alpha);
         }
         using Original = void (*)(CHyprDropShadowDecoration*, PHLMONITOR, const float&);
@@ -82,12 +82,12 @@ namespace {
         if (!pluginActive)
             return;
 
-        const auto config = lustreConfig();
-        const auto now = CLustreAnimation::Clock::now();
+        const auto config = hyprionConfig();
+        const auto now = CHyprionAnimation::Clock::now();
         const auto focused = Desktop::focusState()->window();
         bool running = false;
         for (const auto& window : Desktop::windowState()->windows()) {
-            auto* decoration = lustreDecoration(window);
+            auto* decoration = hyprionDecoration(window);
             if (!decoration)
                 continue;
             if (!config.enabled || (!config.inset.enabled && !config.outset.enabled))
@@ -104,11 +104,11 @@ namespace {
             return;
         lastFocusedWindow = focusedWindow;
 
-        const auto config = lustreConfig();
-        const auto now = CLustreAnimation::Clock::now();
+        const auto config = hyprionConfig();
+        const auto now = CHyprionAnimation::Clock::now();
         const bool effectsEnabled = config.enabled && (config.inset.enabled || config.outset.enabled);
         bool running = false;
-        if (auto* decoration = lustreDecoration(previous)) {
+        if (auto* decoration = hyprionDecoration(previous)) {
             if (effectsEnabled) {
                 decoration->stateChanged(false, previous->m_isUrgent, config, now);
                 running = decoration->animate(config, now) || running;
@@ -116,7 +116,7 @@ namespace {
                 decoration->resetAnimation(false, previous->m_isUrgent, now);
             }
         }
-        if (auto* decoration = lustreDecoration(focusedWindow)) {
+        if (auto* decoration = hyprionDecoration(focusedWindow)) {
             if (effectsEnabled) {
                 decoration->stateChanged(true, focusedWindow->m_isUrgent, config, now);
                 running = decoration->animate(config, now) || running;
@@ -129,12 +129,12 @@ namespace {
     }
 
     void onUrgencyChanged(const PHLWINDOW& urgentWindow) {
-        auto* decoration = lustreDecoration(urgentWindow);
+        auto* decoration = hyprionDecoration(urgentWindow);
         if (!decoration)
             return;
 
-        const auto config = lustreConfig();
-        const auto now = CLustreAnimation::Clock::now();
+        const auto config = hyprionConfig();
+        const auto now = CHyprionAnimation::Clock::now();
         const bool focused = urgentWindow == Desktop::focusState()->window();
         if (!config.enabled || (!config.inset.enabled && !config.outset.enabled)) {
             decoration->resetAnimation(focused, urgentWindow->m_isUrgent, now);
@@ -147,22 +147,22 @@ namespace {
     }
 
     void attachDecoration(const PHLWINDOW& window, bool animateFocus) {
-        if (!window || !window->m_isMapped || lustreDecoration(window))
+        if (!window || !window->m_isMapped || hyprionDecoration(window))
             return;
 
         for (const auto& deco : window->m_windowDecorations) {
             if (auto* shadow = dynamic_cast<CHyprDropShadowDecoration*>(deco.get()))
                 shadowWindows.insert_or_assign(shadow, window);
         }
-        HyprlandAPI::addWindowDecoration(pluginHandle, window, makeUnique<CLustreDecoration>(window));
-        auto* decoration = lustreDecoration(window);
+        HyprlandAPI::addWindowDecoration(pluginHandle, window, makeUnique<CHyprionDecoration>(window));
+        auto* decoration = hyprionDecoration(window);
         if (!decoration)
             return;
 
-        const auto config = lustreConfig();
+        const auto config = hyprionConfig();
         const auto focused = Desktop::focusState()->window();
         const bool isFocused = window == focused;
-        const auto now = CLustreAnimation::Clock::now();
+        const auto now = CHyprionAnimation::Clock::now();
         if (!config.enabled || (!config.inset.enabled && !config.outset.enabled)) {
             decoration->resetAnimation(isFocused, window->m_isUrgent, now);
             return;
@@ -180,13 +180,13 @@ namespace {
     void onConfigReloaded() {
         if (animationTimer)
             animationTimer->updateTimeout(std::nullopt);
-        const auto config = lustreConfig();
-        const auto now = CLustreAnimation::Clock::now();
+        const auto config = hyprionConfig();
+        const auto now = CHyprionAnimation::Clock::now();
         const auto focused = Desktop::focusState()->window();
         lastFocusedWindow = focused;
         bool running = false;
         for (const auto& window : Desktop::windowState()->windows()) {
-            if (auto* decoration = lustreDecoration(window)) {
+            if (auto* decoration = hyprionDecoration(window)) {
                 decoration->updateWindow(window);
                 if (!config.enabled || (!config.inset.enabled && !config.outset.enabled))
                     decoration->resetAnimation(window == focused, window->m_isUrgent, now);
@@ -213,34 +213,34 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     const std::string serverHash = __hyprland_api_get_hash();
     const std::string clientHash = __hyprland_api_get_client_hash();
     if (serverHash != clientHash) {
-        const std::string message = "hyprlustre: API mismatch (server=" + serverHash + ", client=" + clientHash + ")";
+        const std::string message = "hyprion: API mismatch (server=" + serverHash + ", client=" + clientHash + ")";
         HyprlandAPI::addNotification(handle, message, CHyprColor{1.0, 0.2, 0.2, 1.0}, 5000);
         throw std::runtime_error(message);
     }
 
-    if (!registerLustreConfig(handle))
-        throw std::runtime_error("hyprlustre: failed to register configuration values");
+    if (!registerHyprionConfig(handle))
+        throw std::runtime_error("hyprion: failed to register configuration values");
 
     if (g_pHyprRenderer && g_pHyprRenderer->type() != Render::IHyprRenderer::RT_GL)
-        throw std::runtime_error("hyprlustre requires Hyprland's OpenGL renderer");
-    if (g_pHyprRenderer && !initializeLustreRenderer())
-        throw std::runtime_error("hyprlustre: failed to initialize the GPU sampling shader");
+        throw std::runtime_error("hyprion requires Hyprland's OpenGL renderer");
+    if (g_pHyprRenderer && !initializeHyprionRenderer())
+        throw std::runtime_error("hyprion: failed to initialize the GPU sampling shader");
 
     auto shadowMethods = HyprlandAPI::findFunctionsByName(handle, "getRenderData");
     std::erase_if(shadowMethods, [](const auto& match) { return !match.demangled.starts_with("CHyprDropShadowDecoration::getRenderData("); });
     if (shadowMethods.size() != 1)
-        throw std::runtime_error("hyprlustre: cannot locate native shadow rendering");
+        throw std::runtime_error("hyprion: cannot locate native shadow rendering");
     shadowHook = HyprlandAPI::createFunctionHook(handle, shadowMethods.front().address, reinterpret_cast<void*>(&shadowRenderData));
     if (!shadowHook || !shadowHook->hook())
-        throw std::runtime_error("hyprlustre: cannot hook native shadow rendering");
+        throw std::runtime_error("hyprion: cannot hook native shadow rendering");
 
     auto shadowDrawMethods = HyprlandAPI::findFunctionsByName(handle, "draw");
     std::erase_if(shadowDrawMethods, [](const auto& match) { return !match.demangled.starts_with("CHyprDropShadowDecoration::draw("); });
     if (shadowDrawMethods.size() != 1)
-        throw std::runtime_error("hyprlustre: cannot locate native shadow pass scheduling");
+        throw std::runtime_error("hyprion: cannot locate native shadow pass scheduling");
     shadowDrawHook = HyprlandAPI::createFunctionHook(handle, shadowDrawMethods.front().address, reinterpret_cast<void*>(&drawShadow));
     if (!shadowDrawHook || !shadowDrawHook->hook())
-        throw std::runtime_error("hyprlustre: cannot hook native shadow pass scheduling");
+        throw std::runtime_error("hyprion: cannot hook native shadow pass scheduling");
 
     if (g_pEventLoopManager) {
         animationTimer = makeShared<CEventLoopTimer>(std::nullopt, onAnimationTimer, nullptr);
@@ -253,12 +253,12 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     }));
     listeners.emplace_back(Event::bus()->m_events.window.active.listen(onFocusChanged));
     listeners.emplace_back(Event::bus()->m_events.window.urgent.listen(onUrgencyChanged));
-    listeners.emplace_back(Event::bus()->m_events.monitor.destroyMon.listen([](const PHLMONITOR& monitor) { destroyLustreMonitor(monitor); }));
+    listeners.emplace_back(Event::bus()->m_events.monitor.destroyMon.listen([](const PHLMONITOR& monitor) { destroyHyprionMonitor(monitor); }));
     listeners.emplace_back(Event::bus()->m_events.config.reloaded.listen(onConfigReloaded));
     listeners.emplace_back(Event::bus()->m_events.render.pre.listen([](PHLMONITOR monitor) {
-        if (!pluginActive || !monitor || !monitor->m_blurFBDirty || monitor->m_blurFBShouldRender || !lustreConfig().outsetBlur)
+        if (!pluginActive || !monitor || !monitor->m_blurFBDirty || monitor->m_blurFBShouldRender || !hyprionConfig().outsetBlur)
             return;
-        // Native preRender skips opaque windows. Lustre is an independent
+        // Native preRender skips opaque windows. Hyprion is an independent
         // consumer, so request the same shared cache even without window blur.
         for (const auto& window : Desktop::windowState()->windows()) {
             if (!window->m_isMapped || !window->visible() || window->m_X11DoesntWantBorders ||
@@ -279,7 +279,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     for (const auto& window : Desktop::windowState()->windows())
         attachDecoration(window, false);
 
-    return {"lustre", "Hyprlustre visual effects for Hyprland", "Suvikyi", "0.2.0"};
+    return {"hyprion", "Hyprion visual effects for Hyprland", "Suvikyi", "0.2.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
@@ -303,8 +303,8 @@ APICALL EXPORT void PLUGIN_EXIT() {
     shadowWindows.clear();
     lastFocusedWindow = PHLWINDOWREF{};
     if (g_pHyprRenderer)
-        g_pHyprRenderer->m_renderPass.removeAllOfType("lustre");
-    destroyLustreRenderer();
+        g_pHyprRenderer->m_renderPass.removeAllOfType("hyprion");
+    destroyHyprionRenderer();
     pluginHandle = nullptr;
 }
 

@@ -1,11 +1,11 @@
 [repository]
-name = "hyprlustre"
+name = "hyprion"
 authors = ["Suvikyi"]
 
-[lustre]
-description = "Hyprlustre visual effects for Hyprland"
+[hyprion]
+description = "Hyprion visual effects for Hyprland"
 authors = ["Suvikyi"]
-output = "build/liblustre.so"
+output = "build/libhyprion.so"
 build = [
     "cmake -S . -B build -DCMAKE_BUILD_TYPE=Release",
     "cmake --build build --parallel 2",

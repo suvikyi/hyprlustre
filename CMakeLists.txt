@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.27)
 
-project(hyprlustre
-    DESCRIPTION "Hyprlustre visual effects for Hyprland"
+project(hyprion
+    DESCRIPTION "Hyprion visual effects for Hyprland"
     VERSION 0.2.0
     LANGUAGES CXX
 )
@@ -21,10 +21,10 @@ pkg_check_modules(deps REQUIRED IMPORTED_TARGET
     xkbcommon
 )
 
-add_library(lustre SHARED
+add_library(hyprion SHARED
     src/main.cpp
-    src/LustreConfig.cpp
-    src/LustreDecoration.cpp
+    src/HyprionConfig.cpp
+    src/HyprionDecoration.cpp
 )
 
-target_link_libraries(lustre PRIVATE rt PkgConfig::deps)
+target_link_libraries(hyprion PRIVATE rt PkgConfig::deps)

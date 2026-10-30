@@ -1,5 +1,5 @@
-#include "LustreDecoration.hpp"
-#include "LustreConfig.hpp"
+#include "HyprionDecoration.hpp"
+#include "HyprionConfig.hpp"
 
 #include <algorithm>
 #include <array>
@@ -596,22 +596,22 @@ void main() {
 
         const int allocationStrip = sameTarget ? std::max(cache.maxStrip, strip) : strip;
         if (allocationStrip < 1 || allocationStrip > std::numeric_limits<int>::max() / 2) {
-            Log::logger->log(Log::ERR, "hyprlustre: invalid snapshot strip size for monitor {}", monitor->m_id);
+            Log::logger->log(Log::ERR, "hyprion: invalid snapshot strip size for monitor {}", monitor->m_id);
             return false;
         }
 
         SP<IFramebuffer> horizontal;
         SP<IFramebuffer> vertical;
         const auto monitorName = std::to_string(monitor->m_id);
-        const bool allocated = allocateFramebuffer(horizontal, "lustre-horizontal-" + monitorName, width, allocationStrip * 2, sourceFramebuffer->m_drmFormat, imageDescription) &&
-            allocateFramebuffer(vertical, "lustre-vertical-" + monitorName, allocationStrip * 2, height, sourceFramebuffer->m_drmFormat, imageDescription);
+        const bool allocated = allocateFramebuffer(horizontal, "hyprion-horizontal-" + monitorName, width, allocationStrip * 2, sourceFramebuffer->m_drmFormat, imageDescription) &&
+            allocateFramebuffer(vertical, "hyprion-vertical-" + monitorName, allocationStrip * 2, height, sourceFramebuffer->m_drmFormat, imageDescription);
         if (!allocated) {
             cache.failedWidth = width;
             cache.failedHeight = height;
             cache.failedStrip = strip;
             cache.failedFormat = sourceFramebuffer->m_drmFormat;
             cache.failedImageDescriptionId = descriptionId;
-            Log::logger->log(Log::ERR, "hyprlustre: failed to allocate pixel snapshots for monitor {}", monitor->m_id);
+            Log::logger->log(Log::ERR, "hyprion: failed to allocate pixel snapshots for monitor {}", monitor->m_id);
             return false;
         }
 
@@ -679,9 +679,9 @@ void main() {
 
 }
 
-class CLustrePassElement final : public IPassElement {
+class CHyprionPassElement final : public IPassElement {
   public:
-    CLustrePassElement(CLustreDecoration* decoration, float alpha, CBox box, bool outset, bool snapshotOnly = false) :
+    CHyprionPassElement(CHyprionDecoration* decoration, float alpha, CBox box, bool outset, bool snapshotOnly = false) :
         m_decoration(decoration), m_alpha(alpha), m_box(box), m_outset(outset), m_snapshotOnly(snapshotOnly) {}
 
     std::vector<UP<IPassElement>> draw() override {
@@ -692,35 +692,35 @@ class CLustrePassElement final : public IPassElement {
 
     bool needsLiveBlur() override { return snapshotUsesBlur() && !outsetSnapshotUsesCache(); }
     bool needsPrecomputeBlur() override { return snapshotUsesBlur() && outsetSnapshotUsesCache(); }
-    const char* passName() override { return "lustre"; }
+    const char* passName() override { return "hyprion"; }
     ePassElementType type() override { return EK_CUSTOM; }
     std::optional<CBox> boundingBox() override { return m_box; }
     bool disableSimplification() override { return true; }
 
   private:
-    bool snapshotUsesBlur() const { return m_outset && m_snapshotOnly && lustreConfig().outsetBlur; }
+    bool snapshotUsesBlur() const { return m_outset && m_snapshotOnly && hyprionConfig().outsetBlur; }
     bool outsetSnapshotUsesCache() const { return m_decoration && outsetUsesSharedBlur(m_decoration->m_window.lock()); }
 
-    CLustreDecoration* m_decoration = nullptr;
+    CHyprionDecoration* m_decoration = nullptr;
     float            m_alpha = 1.F;
     CBox             m_box;
     bool             m_outset;
     bool             m_snapshotOnly;
 };
 
-CLustreDecoration::CLustreDecoration(PHLWINDOW window) :
-    IHyprWindowDecoration(window), m_window(window), m_animations{CLustreAnimation(Desktop::focusState()->window() == window, window->m_isUrgent),
-        CLustreAnimation(Desktop::focusState()->window() == window, window->m_isUrgent)} {
+CHyprionDecoration::CHyprionDecoration(PHLWINDOW window) :
+    IHyprWindowDecoration(window), m_window(window), m_animations{CHyprionAnimation(Desktop::focusState()->window() == window, window->m_isUrgent),
+        CHyprionAnimation(Desktop::focusState()->window() == window, window->m_isUrgent)} {
     for (auto& animation : m_animations)
         animation.bind(window);
 }
 
-CLustreDecoration::~CLustreDecoration() {
+CHyprionDecoration::~CHyprionDecoration() {
     damageEntire();
 }
 
-void CLustreDecoration::stateChanged(bool focused, bool urgent, const SLustreConfig& config, CLustreAnimation::Time now) {
-    const SLustreBorderConfig* profiles[] = {&config.inset, &config.outset};
+void CHyprionDecoration::stateChanged(bool focused, bool urgent, const SHyprionConfig& config, CHyprionAnimation::Time now) {
+    const SHyprionBorderConfig* profiles[] = {&config.inset, &config.outset};
     for (size_t i = 0; i < m_animations.size(); ++i) {
         if (config.enabled && profiles[i]->enabled)
             m_animations[i].stateChanged(focused, urgent, *profiles[i], now);
@@ -730,8 +730,8 @@ void CLustreDecoration::stateChanged(bool focused, bool urgent, const SLustreCon
     damageBorder();
 }
 
-void CLustreDecoration::refreshAnimation(bool focused, bool urgent, const SLustreConfig& config, CLustreAnimation::Time now) {
-    const SLustreBorderConfig* profiles[] = {&config.inset, &config.outset};
+void CHyprionDecoration::refreshAnimation(bool focused, bool urgent, const SHyprionConfig& config, CHyprionAnimation::Time now) {
+    const SHyprionBorderConfig* profiles[] = {&config.inset, &config.outset};
     for (size_t i = 0; i < m_animations.size(); ++i) {
         if (config.enabled && profiles[i]->enabled)
             m_animations[i].refresh(focused, urgent, *profiles[i], now);
@@ -741,8 +741,8 @@ void CLustreDecoration::refreshAnimation(bool focused, bool urgent, const SLustr
     damageBorder();
 }
 
-bool CLustreDecoration::animate(const SLustreConfig& config, CLustreAnimation::Time now) {
-    const SLustreBorderConfig* profiles[] = {&config.inset, &config.outset};
+bool CHyprionDecoration::animate(const SHyprionConfig& config, CHyprionAnimation::Time now) {
+    const SHyprionBorderConfig* profiles[] = {&config.inset, &config.outset};
     bool running = false;
     for (size_t i = 0; i < m_animations.size(); ++i)
         running = m_animations[i].advance(*profiles[i], now) || running;
@@ -751,15 +751,15 @@ bool CLustreDecoration::animate(const SLustreConfig& config, CLustreAnimation::T
     return running;
 }
 
-void CLustreDecoration::resetAnimation(bool focused, bool urgent, CLustreAnimation::Time now) {
+void CHyprionDecoration::resetAnimation(bool focused, bool urgent, CHyprionAnimation::Time now) {
     for (auto& animation : m_animations)
         animation.reset(focused, urgent, now);
     damageBorder();
 }
 
-SDecorationPositioningInfo CLustreDecoration::getPositioningInfo() {
+SDecorationPositioningInfo CHyprionDecoration::getPositioningInfo() {
     const auto window = m_window.lock();
-    const auto config = lustreConfig();
+    const auto config = hyprionConfig();
     const bool decorated = window && Fullscreen::controller()->getFullscreenModes(window).internal != Fullscreen::FSMODE_FULLSCREEN && window->m_ruleApplicator->decorate().valueOrDefault() && !window->m_X11DoesntWantBorders;
     const int extent = decorated && config.enabled && config.outset.enabled ? config.outset.size : 0;
     SDecorationPositioningInfo info;
@@ -772,11 +772,11 @@ SDecorationPositioningInfo CLustreDecoration::getPositioningInfo() {
     m_outsetExtent = extent;
     return info;
 }
-void CLustreDecoration::onPositioningReply(const SDecorationPositioningReply&) {
+void CHyprionDecoration::onPositioningReply(const SDecorationPositioningReply&) {
     damageEntire();
 }
 
-CBox CLustreDecoration::monitorLocalBox(PHLMONITOR monitor) const {
+CBox CHyprionDecoration::monitorLocalBox(PHLMONITOR monitor) const {
     const auto window = m_window.lock();
     if (!window || !monitor)
         return {};
@@ -789,7 +789,7 @@ CBox CLustreDecoration::monitorLocalBox(PHLMONITOR monitor) const {
     box.translate(window->m_floatingOffset - monitor->m_position + workspaceOffset);
     return box;
 }
-void CLustreDecoration::updateOrbitArcTable(float power) {
+void CHyprionDecoration::updateOrbitArcTable(float power) {
     if (m_orbitArcPower == power)
         return;
 
@@ -817,9 +817,9 @@ void CLustreDecoration::updateOrbitArcTable(float power) {
 }
 
 
-void CLustreDecoration::draw(PHLMONITOR monitor, float const& alpha) {
+void CHyprionDecoration::draw(PHLMONITOR monitor, float const& alpha) {
     const auto window = m_window.lock();
-    const auto config = lustreConfig();
+    const auto config = hyprionConfig();
     if (!window || !window->m_isMapped || !monitor || !config.enabled || !std::isfinite(alpha) || alpha <= 0.0F)
         return;
     const auto box = monitorLocalBox(monitor);
@@ -827,40 +827,40 @@ void CLustreDecoration::draw(PHLMONITOR monitor, float const& alpha) {
         return;
     // Consume the pre-shadow snapshot before inset rendering reuses the cache.
     if (config.outset.enabled)
-        g_pHyprRenderer->m_renderPass.add(makeUnique<CLustrePassElement>(this, alpha, box.copy().expand(config.outset.size), true));
+        g_pHyprRenderer->m_renderPass.add(makeUnique<CHyprionPassElement>(this, alpha, box.copy().expand(config.outset.size), true));
     if (config.inset.enabled)
-        g_pHyprRenderer->m_renderPass.add(makeUnique<CLustrePassElement>(this, alpha, box, false));
+        g_pHyprRenderer->m_renderPass.add(makeUnique<CHyprionPassElement>(this, alpha, box, false));
 }
 
-void CLustreDecoration::drawOutset(PHLMONITOR monitor, float alpha) {
+void CHyprionDecoration::drawOutset(PHLMONITOR monitor, float alpha) {
     const auto window = m_window.lock();
-    const auto config = lustreConfig();
+    const auto config = hyprionConfig();
     if (!window || !window->m_isMapped || !monitor || !config.enabled || !config.outset.enabled || !std::isfinite(alpha) || alpha <= 0.F)
         return;
     auto box = monitorLocalBox(monitor);
     box.expand(config.outset.size);
     if (box.width > 0.0 && box.height > 0.0)
-        g_pHyprRenderer->m_renderPass.add(makeUnique<CLustrePassElement>(this, alpha, box, true, true));
+        g_pHyprRenderer->m_renderPass.add(makeUnique<CHyprionPassElement>(this, alpha, box, true, true));
 }
-void CLustreDecoration::drawPass(PHLMONITOR monitor, float alpha, const CBox& monitorLocalBox_, bool outset, bool snapshotOnly) {
+void CHyprionDecoration::drawPass(PHLMONITOR monitor, float alpha, const CBox& monitorLocalBox_, bool outset, bool snapshotOnly) {
     if (snapshotOnly)
         m_outsetSnapshotReady = false;
     else if (outset && !m_outsetSnapshotReady)
         return;
     if (!monitor || !g_pHyprRenderer || !g_pHyprOpenGL)
         return;
-    if (!shader && !initializeLustreRenderer())
+    if (!shader && !initializeHyprionRenderer())
         return;
 
     auto& renderData = g_pHyprRenderer->m_renderData;
     const auto window = m_window.lock();
     if (!window || !window->m_isMapped || renderData.damage.empty() || !renderData.currentFB)
         return;
-    const auto config = lustreConfig();
+    const auto config = hyprionConfig();
     const auto& profile = outset ? config.outset : config.inset;
     if (!config.enabled || !profile.enabled || !std::isfinite(alpha) || alpha <= 0.0F)
         return;
-    const auto frameStyle = m_animations[outset ? 1 : 0].style(profile, CLustreAnimation::Clock::now());
+    const auto frameStyle = m_animations[outset ? 1 : 0].style(profile, CHyprionAnimation::Clock::now());
     const auto& style = frameStyle.border;
     const auto& orbit = frameStyle.orbit;
     const bool baseTransformVisible = style.strength > 0.F && (style.lightness != 0.F || style.saturation != 1.F || style.chroma != 0.F || style.hue != 0.F || style.tintStrength > 0.F);
@@ -1097,11 +1097,11 @@ void CLustreDecoration::drawPass(PHLMONITOR monitor, float alpha, const CBox& mo
     snapshots.horizontal->getTexture()->unbind();
 }
 
-eDecorationType CLustreDecoration::getDecorationType() {
+eDecorationType CHyprionDecoration::getDecorationType() {
     return DECORATION_CUSTOM;
 }
 
-void CLustreDecoration::updateWindow(PHLWINDOW window) {
+void CHyprionDecoration::updateWindow(PHLWINDOW window) {
     m_window = window;
     // Rebinding also picks up the animation tree a config reload rebuilt.
     for (auto& animation : m_animations)
@@ -1113,12 +1113,12 @@ void CLustreDecoration::updateWindow(PHLWINDOW window) {
         g_pDecorationPositioner->repositionDeco(this);
 }
 
-void CLustreDecoration::damageEntire() {
+void CHyprionDecoration::damageEntire() {
     const auto window = m_window.lock();
     if (window && window->m_isMapped && g_pHyprRenderer)
         g_pHyprRenderer->damageWindow(window);
 }
-void CLustreDecoration::damageBorder() {
+void CHyprionDecoration::damageBorder() {
     const auto window = m_window.lock();
     if (!window || !window->m_isMapped || !g_pHyprRenderer)
         return;
@@ -1128,7 +1128,7 @@ void CLustreDecoration::damageBorder() {
     CBox box = window->getWindowMainSurfaceBox();
     box.translate(window->m_floatingOffset + workspaceOffset);
 
-    const auto config = lustreConfig();
+    const auto config = hyprionConfig();
     const double borderExtent = static_cast<double>(std::max(config.inset.size, config.outset.size)) + static_cast<double>(window->rounding());
     if (!std::isfinite(borderExtent) || borderExtent <= 0.0 || box.width <= 0.0 || box.height <= 0.0)
         return;
@@ -1142,20 +1142,20 @@ void CLustreDecoration::damageBorder() {
     g_pHyprRenderer->damageRegion(borderRegion);
 }
 
-eDecorationLayer CLustreDecoration::getDecorationLayer() {
+eDecorationLayer CHyprionDecoration::getDecorationLayer() {
     return DECORATION_LAYER_OVER;
 }
 
-uint64_t CLustreDecoration::getDecorationFlags() {
+uint64_t CHyprionDecoration::getDecorationFlags() {
     return DECORATION_PART_OF_MAIN_WINDOW;
 }
 
-std::string CLustreDecoration::getDisplayName() {
-    return "hyprlustre";
+std::string CHyprionDecoration::getDisplayName() {
+    return "hyprion";
 }
 
 
-bool initializeLustreRenderer() {
+bool initializeHyprionRenderer() {
     if (shader)
         return true;
     if (!g_pHyprRenderer || g_pHyprRenderer->type() != IHyprRenderer::RT_GL || !g_pHyprOpenGL || !g_pHyprOpenGL->m_eglContext)
@@ -1164,7 +1164,7 @@ bool initializeLustreRenderer() {
     g_pHyprOpenGL->makeEGLCurrent();
     auto candidate = makeShared<CShader>();
     if (!candidate->createProgram(VERTEX_SHADER, FRAGMENT_SHADER, true, true)) {
-        Log::logger->log(Log::ERR, "hyprlustre: failed to compile the sampling shader");
+        Log::logger->log(Log::ERR, "hyprion: failed to compile the sampling shader");
         return false;
     }
 
@@ -1211,7 +1211,7 @@ bool initializeLustreRenderer() {
     return true;
 }
 
-void destroyLustreRenderer() {
+void destroyHyprionRenderer() {
     if (g_pHyprOpenGL && g_pHyprOpenGL->m_eglContext)
         g_pHyprOpenGL->makeEGLCurrent();
     monitorSnapshots.clear();
@@ -1219,7 +1219,7 @@ void destroyLustreRenderer() {
     uniforms = {};
 }
 
-void destroyLustreMonitor(PHLMONITOR monitor) {
+void destroyHyprionMonitor(PHLMONITOR monitor) {
     if (!monitor)
         return;
     const auto it = monitorSnapshots.find(static_cast<uint64_t>(monitor->m_id));

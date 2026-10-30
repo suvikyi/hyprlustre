@@ -1,6 +1,6 @@
 #pragma once
 
-#include "LustreConfig.hpp"
+#include "HyprionConfig.hpp"
 
 #include <hyprland/src/animation/AnimationManager.hpp>
 #include <hyprland/src/config/shared/animation/AnimationTree.hpp>
@@ -17,7 +17,7 @@
 // crossfades therefore take their curve and speed from `animation = border,
 // ...`, land instantly when that animation is off or `animations:enabled =
 // false`, and get repainted through the animation manager's damage.
-class CLustreProgress {
+class CHyprionProgress {
   public:
     void bind(PHLWINDOW window) {
         if (window && m_progress && m_window.lock() == window) {
@@ -65,16 +65,16 @@ class CLustreProgress {
 };
 
 // Each decoration owns its animation: losing focus must not cancel another window's fade.
-class CLustreAnimation {
+class CHyprionAnimation {
   public:
     using Clock = std::chrono::steady_clock;
     using Time = Clock::time_point;
 
-    explicit CLustreAnimation(bool focused = false, bool urgent = false) : m_focused(focused), m_urgent(urgent), m_orbitPhaseUpdated(Clock::now()) {}
+    explicit CHyprionAnimation(bool focused = false, bool urgent = false) : m_focused(focused), m_urgent(urgent), m_orbitPhaseUpdated(Clock::now()) {}
 
-    SLustreFrameStyle style(const SLustreBorderConfig& config, Time now) const {
+    SHyprionFrameStyle style(const SHyprionBorderConfig& config, Time now) const {
         const auto& state = m_focused ? config.active : config.inactive;
-        const SLustreStyle target = {
+        const SHyprionStyle target = {
             .lightness = state.lightness,
             .saturation = state.saturation,
             .chroma = state.chroma,
@@ -87,7 +87,7 @@ class CLustreAnimation {
         // The leg's progress is 1 whenever it is settled, so an idle border is
         // exactly the state's style.
         const float transition = m_borderProgress.value();
-        SLustreStyle border = {
+        SHyprionStyle border = {
             .lightness = std::lerp(m_from.lightness, target.lightness, transition),
             .saturation = std::lerp(m_from.saturation, target.saturation, transition),
             .chroma = std::lerp(m_from.chroma, target.chroma, transition),
@@ -122,7 +122,7 @@ class CLustreAnimation {
         m_orbitProgress.bind(window);
     }
 
-    void stateChanged(bool focused, bool urgent, const SLustreBorderConfig& config, Time now) {
+    void stateChanged(bool focused, bool urgent, const SHyprionBorderConfig& config, Time now) {
         if (focused != m_focused) {
             m_from = style(config, now).border;
             m_started = now;
@@ -144,7 +144,7 @@ class CLustreAnimation {
         }
     }
 
-    void refresh(bool focused, bool urgent, const SLustreBorderConfig& config, Time now) {
+    void refresh(bool focused, bool urgent, const SHyprionBorderConfig& config, Time now) {
         advanceOrbitPhase(now);
         m_focused = focused;
         m_urgent = urgent;
@@ -176,7 +176,7 @@ class CLustreAnimation {
     // flare, the traveling orbit and the focus transition. Hyprland animates the
     // transition value and damages the window for it, so our tick only has to
     // cover the ring's own box.
-    bool advance(const SLustreBorderConfig& config, Time now) {
+    bool advance(const SHyprionBorderConfig& config, Time now) {
         const bool wasRunning = m_borderProgress.running() || m_pulseMs > 0.F || m_orbitFlareMs > 0.F || m_orbitTo.amount > 0.F;
         advanceOrbitPhase(now);
         if (m_pulseMs > 0.F && elapsedMs(now) >= m_pulseMs)
@@ -184,7 +184,7 @@ class CLustreAnimation {
         if (m_orbitFlareMs > 0.F && elapsedMs(now) >= m_orbitFlareMs) {
             // The flare's fade-out is already complete (amount 0), so hand back
             // from exactly that faded style.
-            const SLustreOrbitStyle flareEnd = orbitStyle(now);
+            const SHyprionOrbitStyle flareEnd = orbitStyle(now);
             m_orbitFlareMs = 0.F;
             m_orbitFlareFadeInMs = 0.F;
             m_orbitFlareFadeOutMs = 0.F;
@@ -202,8 +202,8 @@ class CLustreAnimation {
         return std::chrono::duration<float, std::milli>(now - m_started).count();
     }
 
-    SLustreOrbitStyle orbitStyle(Time now) const {
-        SLustreOrbitStyle result = m_orbitTo;
+    SHyprionOrbitStyle orbitStyle(Time now) const {
+        SHyprionOrbitStyle result = m_orbitTo;
         const float transition = m_orbitProgress.value();
         result.timeMs = std::lerp(m_orbitFrom.timeMs, m_orbitTo.timeMs, transition);
         result.length = std::lerp(m_orbitFrom.length, m_orbitTo.length, transition);
@@ -254,7 +254,7 @@ class CLustreAnimation {
         return std::clamp(amount, 0.F, 1.F);
     }
 
-    void setMotion(const SLustreMotionConfig& motion) {
+    void setMotion(const SHyprionMotionConfig& motion) {
         if (m_motionAmount == motion.amount && m_motionCycles == motion.cycles)
             return;
         const double position = motionPhase(m_orbitPhase);
@@ -280,15 +280,15 @@ class CLustreAnimation {
         m_orbitPhaseUpdated = now;
     }
 
-    static bool sameOrbit(const SLustreOrbitStyle& lhs, const SLustreOrbitStyle& rhs) {
+    static bool sameOrbit(const SHyprionOrbitStyle& lhs, const SHyprionOrbitStyle& rhs) {
         return lhs.timeMs == rhs.timeMs && lhs.length == rhs.length && lhs.lightness == rhs.lightness && lhs.saturation == rhs.saturation &&
             lhs.chroma == rhs.chroma && lhs.hue == rhs.hue &&
             lhs.strength == rhs.strength && lhs.opacity == rhs.opacity && lhs.amount == rhs.amount && lhs.tintColor == rhs.tintColor && lhs.tintStrength == rhs.tintStrength;
     }
 
-    void retargetOrbit(const SLustreBorderConfig& config, Time now, const SLustreOrbitStyle* fromOverride = nullptr) {
+    void retargetOrbit(const SHyprionBorderConfig& config, Time now, const SHyprionOrbitStyle* fromOverride = nullptr) {
         advanceOrbitPhase(now);
-        const SLustreOrbitProfile* profile = m_orbitFlareMs > 0.F ? &config.orbit.flare
+        const SHyprionOrbitProfile* profile = m_orbitFlareMs > 0.F ? &config.orbit.flare
             : m_urgent                                            ? &config.orbit.urgent
             : m_focused                                           ? &config.orbit.active
                                                                   : &config.orbit.inactive;
@@ -297,7 +297,7 @@ class CLustreAnimation {
             m_orbitDirection = profile->clockwise ? -1.0 : 1.0;
             setMotion(profile->motion);
         }
-        SLustreOrbitStyle target = orbitStyle(now);
+        SHyprionOrbitStyle target = orbitStyle(now);
         if (targetEnabled) {
             target = {
                 .timeMs = profile->timeMs,
@@ -338,7 +338,7 @@ class CLustreAnimation {
 
     bool m_focused = false;
     bool m_urgent = false;
-    SLustreStyle m_from;
+    SHyprionStyle m_from;
     Time m_started;
     float m_pulseMs = 0.F;
     // Non-zero while a focus flare is running; the value is the flare's lap time,
@@ -348,8 +348,8 @@ class CLustreAnimation {
     float m_orbitFlareFadeInMs = 0.F;
     float m_orbitFlareFadeOutMs = 0.F;
 
-    SLustreOrbitStyle m_orbitFrom = {.strength = 0.F};
-    SLustreOrbitStyle m_orbitTo = {.strength = 0.F};
+    SHyprionOrbitStyle m_orbitFrom = {.strength = 0.F};
+    SHyprionOrbitStyle m_orbitTo = {.strength = 0.F};
     Time m_orbitPhaseUpdated;
     float m_orbitLapTimeMs = 12000.F;
     double m_orbitPhase = 0.0;
@@ -359,6 +359,6 @@ class CLustreAnimation {
     bool m_orbitTargetEnabled = false;
 
     // Focus transition and orbit crossfade, both timed by Hyprland.
-    CLustreProgress m_borderProgress;
-    CLustreProgress m_orbitProgress;
+    CHyprionProgress m_borderProgress;
+    CHyprionProgress m_orbitProgress;
 };
