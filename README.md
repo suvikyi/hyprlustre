@@ -6,7 +6,7 @@ Rounded inset and outset borders sample the pixels beneath them, transform them 
 
 The inset overlays the window surface; the outset occupies reserved space outside it and samples the composited background from before the window's own shadow. Both can be enabled together, and both composite using Hyprland's native border antialiasing. Hyprland's native border is optional: when enabled it wraps the outset — set `general.border_size = 0` to omit it. Native shadow extents and corner radii include the outset.
 
-Requires **Hyprland 0.56.2**, matching development headers, and the OpenGL renderer.
+Requires **Hyprland 0.57.0**, matching development headers, and the OpenGL renderer.
 
 ## Install
 

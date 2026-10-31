@@ -13,6 +13,7 @@
 
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/desktop/state/FocusState.hpp>
+#include <hyprland/src/desktop/view/window/WindowPresentation.hpp>
 #include <hyprland/src/desktop/state/WindowState.hpp>
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
@@ -37,9 +38,10 @@ namespace {
     CFunctionHook* shadowDrawHook = nullptr;
     std::unordered_map<CHyprDropShadowDecoration*, PHLWINDOWREF> shadowWindows;
 
-    SShadowRenderData shadowRenderData(CHyprDropShadowDecoration* shadow, PHLMONITOR monitor, const float& alpha) {
-        using Original = SShadowRenderData (*)(CHyprDropShadowDecoration*, PHLMONITOR, const float&);
-        auto data = reinterpret_cast<Original>(shadowHook->m_original)(shadow, monitor, alpha);
+    SShadowRenderData shadowRenderData(CHyprDropShadowDecoration* shadow, Render::CRenderContext& ctx, PHLMONITOR monitor, const float& alpha,
+                                       const Render::SWindowRenderPresentation& presentation) {
+        using Original = SShadowRenderData (*)(CHyprDropShadowDecoration*, Render::CRenderContext&, PHLMONITOR, const float&, const Render::SWindowRenderPresentation&);
+        auto data = reinterpret_cast<Original>(shadowHook->m_original)(shadow, ctx, monitor, alpha, presentation);
         if (!data.valid || data.rounding <= 0.F)
             return data;
         const auto config = hyprionConfig();
@@ -49,7 +51,7 @@ namespace {
         if (owner == shadowWindows.end())
             return data;
         const auto window = owner->second.lock();
-        if (!window || !window->m_isMapped)
+        if (!window || !validMapped(window))
             return data;
         // The native shadow box already includes our reserved outset, but its
         // radius only includes the native border. Expand both by the same amount.
@@ -58,24 +60,28 @@ namespace {
         return data;
     }
 
+    bool windowUrgent(const PHLWINDOW& window) {
+        return window && (window->m_hints & Desktop::View::WINDOW_HINT_URGENT) != Desktop::View::WINDOW_HINT_NONE;
+    }
+
     CHyprionDecoration* hyprionDecoration(const PHLWINDOW& window) {
-        if (!window || !window->m_isMapped)
+        if (!window || !validMapped(window))
             return nullptr;
-        for (const auto& decoration : window->m_windowDecorations) {
+        for (const auto& decoration : window->presentation().decorations()) {
             if (auto* hyprion = dynamic_cast<CHyprionDecoration*>(decoration.get()))
                 return hyprion;
         }
         return nullptr;
     }
 
-    void drawShadow(CHyprDropShadowDecoration* shadow, PHLMONITOR monitor, const float& alpha) {
+    void drawShadow(CHyprDropShadowDecoration* shadow, Render::CRenderContext& ctx, PHLMONITOR monitor, const float& alpha, const Render::SWindowRenderPresentation& presentation) {
         const auto owner = shadowWindows.find(shadow);
         if (owner != shadowWindows.end()) {
             if (auto* decoration = hyprionDecoration(owner->second.lock()))
-                decoration->drawOutset(monitor, alpha);
+                decoration->drawOutset(ctx, monitor, alpha, presentation);
         }
-        using Original = void (*)(CHyprDropShadowDecoration*, PHLMONITOR, const float&);
-        reinterpret_cast<Original>(shadowDrawHook->m_original)(shadow, monitor, alpha);
+        using Original = void (*)(CHyprDropShadowDecoration*, Render::CRenderContext&, PHLMONITOR, const float&, const Render::SWindowRenderPresentation&);
+        reinterpret_cast<Original>(shadowDrawHook->m_original)(shadow, ctx, monitor, alpha, presentation);
     }
 
     void onAnimationTimer(SP<CEventLoopTimer> timer, void*) {
@@ -91,7 +97,7 @@ namespace {
             if (!decoration)
                 continue;
             if (!config.enabled || (!config.inset.enabled && !config.outset.enabled))
-                decoration->resetAnimation(window == focused, window->m_isUrgent, now);
+                decoration->resetAnimation(window == focused, windowUrgent(window), now);
             else
                 running = decoration->animate(config, now) || running;
         }
@@ -110,18 +116,18 @@ namespace {
         bool running = false;
         if (auto* decoration = hyprionDecoration(previous)) {
             if (effectsEnabled) {
-                decoration->stateChanged(false, previous->m_isUrgent, config, now);
+                decoration->stateChanged(false, windowUrgent(previous), config, now);
                 running = decoration->animate(config, now) || running;
             } else {
-                decoration->resetAnimation(false, previous->m_isUrgent, now);
+                decoration->resetAnimation(false, windowUrgent(previous), now);
             }
         }
         if (auto* decoration = hyprionDecoration(focusedWindow)) {
             if (effectsEnabled) {
-                decoration->stateChanged(true, focusedWindow->m_isUrgent, config, now);
+                decoration->stateChanged(true, windowUrgent(focusedWindow), config, now);
                 running = decoration->animate(config, now) || running;
             } else {
-                decoration->resetAnimation(true, focusedWindow->m_isUrgent, now);
+                decoration->resetAnimation(true, windowUrgent(focusedWindow), now);
             }
         }
         if (running && animationTimer)
@@ -137,24 +143,24 @@ namespace {
         const auto now = CHyprionAnimation::Clock::now();
         const bool focused = urgentWindow == Desktop::focusState()->window();
         if (!config.enabled || (!config.inset.enabled && !config.outset.enabled)) {
-            decoration->resetAnimation(focused, urgentWindow->m_isUrgent, now);
+            decoration->resetAnimation(focused, windowUrgent(urgentWindow), now);
             return;
         }
 
-        decoration->stateChanged(focused, urgentWindow->m_isUrgent, config, now);
+        decoration->stateChanged(focused, windowUrgent(urgentWindow), config, now);
         if (animationTimer && decoration->animate(config, now))
             animationTimer->updateTimeout(ANIMATION_TICK);
     }
 
     void attachDecoration(const PHLWINDOW& window, bool animateFocus) {
-        if (!window || !window->m_isMapped || hyprionDecoration(window))
+        if (!window || !validMapped(window) || hyprionDecoration(window))
             return;
 
-        for (const auto& deco : window->m_windowDecorations) {
+        for (const auto& deco : window->presentation().decorations()) {
             if (auto* shadow = dynamic_cast<CHyprDropShadowDecoration*>(deco.get()))
                 shadowWindows.insert_or_assign(shadow, window);
         }
-        HyprlandAPI::addWindowDecoration(pluginHandle, window, makeUnique<CHyprionDecoration>(window));
+        HyprlandAPI::addWindowDecoration(pluginHandle, window, makeShared<CHyprionDecoration>(window));
         auto* decoration = hyprionDecoration(window);
         if (!decoration)
             return;
@@ -164,14 +170,14 @@ namespace {
         const bool isFocused = window == focused;
         const auto now = CHyprionAnimation::Clock::now();
         if (!config.enabled || (!config.inset.enabled && !config.outset.enabled)) {
-            decoration->resetAnimation(isFocused, window->m_isUrgent, now);
+            decoration->resetAnimation(isFocused, windowUrgent(window), now);
             return;
         }
         if (animateFocus && isFocused) {
             decoration->resetAnimation(false, false, now);
-            decoration->stateChanged(true, window->m_isUrgent, config, now);
+            decoration->stateChanged(true, windowUrgent(window), config, now);
         } else {
-            decoration->stateChanged(isFocused, window->m_isUrgent, config, now);
+            decoration->stateChanged(isFocused, windowUrgent(window), config, now);
         }
         if (animationTimer && decoration->animate(config, now))
             animationTimer->updateTimeout(ANIMATION_TICK);
@@ -189,9 +195,9 @@ namespace {
             if (auto* decoration = hyprionDecoration(window)) {
                 decoration->updateWindow(window);
                 if (!config.enabled || (!config.inset.enabled && !config.outset.enabled))
-                    decoration->resetAnimation(window == focused, window->m_isUrgent, now);
+                    decoration->resetAnimation(window == focused, windowUrgent(window), now);
                 else {
-                    decoration->refreshAnimation(window == focused, window->m_isUrgent, config, now);
+                    decoration->refreshAnimation(window == focused, windowUrgent(window), config, now);
                     running = decoration->animate(config, now) || running;
                 }
             }
@@ -261,7 +267,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         // Native preRender skips opaque windows. Hyprion is an independent
         // consumer, so request the same shared cache even without window blur.
         for (const auto& window : Desktop::windowState()->windows()) {
-            if (!window->m_isMapped || !window->visible() || window->m_X11DoesntWantBorders ||
+            if (!validMapped(window) || window->isHidden() || window->backend().traits().suggestsNoBorder ||
                 !window->m_ruleApplicator->decorate().valueOrDefault() ||
                 Fullscreen::controller()->getFullscreenModes(window).internal == Fullscreen::FSMODE_FULLSCREEN ||
                 !g_pHyprRenderer->shouldRenderWindow(window, monitor))
@@ -279,7 +285,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     for (const auto& window : Desktop::windowState()->windows())
         attachDecoration(window, false);
 
-    return {"hyprion", "Hyprion visual effects for Hyprland", "Suvikyi", "0.2.0"};
+    return {"hyprion", "Hyprion visual effects for Hyprland", "Suvikyi", "0.2.1"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
@@ -303,7 +309,7 @@ APICALL EXPORT void PLUGIN_EXIT() {
     shadowWindows.clear();
     lastFocusedWindow = PHLWINDOWREF{};
     if (g_pHyprRenderer)
-        g_pHyprRenderer->m_renderPass.removeAllOfType("hyprion");
+        g_pHyprRenderer->context().m_pass.removeAllOfType("hyprion");
     destroyHyprionRenderer();
     pluginHandle = nullptr;
 }

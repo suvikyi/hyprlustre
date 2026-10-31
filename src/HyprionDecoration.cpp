@@ -13,13 +13,16 @@
 #include <drm_fourcc.h>
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/desktop/state/FocusState.hpp>
+#include <hyprland/src/desktop/view/window/WindowPresentation.hpp>
 #include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
 #include <hyprland/src/debug/log/Logger.hpp>
 #include <hyprland/src/helpers/math/Math.hpp>
 #include <hyprland/src/output/MonitorResources.hpp>
+#include <hyprland/src/render/Context.hpp>
 #include <hyprland/src/render/OpenGL.hpp>
 #include <hyprland/src/render/gl/GLFramebuffer.hpp>
 #include <hyprland/src/render/Renderer.hpp>
+#include <hyprland/src/render/WindowRenderPresentation.hpp>
 #include <hyprland/src/render/pass/PassElement.hpp>
 
 using namespace Hyprutils::Memory;
@@ -530,8 +533,8 @@ void main() {
     // Hyprland picks the blur source for a window: the shared pre-window cache
     // (tiled windows with new_optimizations, or xray) or a live blur of the
     // framebuffer. Ask it so the outset matches whatever the window itself gets.
-    bool outsetUsesSharedBlur(const PHLWINDOW& window) {
-        return g_pHyprRenderer && g_pHyprRenderer->m_renderData.pMonitor && window && g_pHyprRenderer->shouldUseNewBlurOptimizations(nullptr, window);
+    bool outsetUsesSharedBlur(Render::CRenderContext& ctx, const PHLWINDOW& window) {
+        return g_pHyprRenderer && ctx.m_data.pMonitor && window && g_pHyprRenderer->shouldUseNewBlurOptimizations(ctx, nullptr, window);
     }
 
     bool allocateFramebuffer(SP<IFramebuffer>& framebuffer, const std::string& name, int width, int height, DRMFormat format,
@@ -596,7 +599,7 @@ void main() {
 
         const int allocationStrip = sameTarget ? std::max(cache.maxStrip, strip) : strip;
         if (allocationStrip < 1 || allocationStrip > std::numeric_limits<int>::max() / 2) {
-            Log::logger->log(Log::ERR, "hyprion: invalid snapshot strip size for monitor {}", monitor->m_id);
+            LOG(Log::ERR, "hyprion: invalid snapshot strip size for monitor {}", monitor->m_id);
             return false;
         }
 
@@ -611,7 +614,7 @@ void main() {
             cache.failedStrip = strip;
             cache.failedFormat = sourceFramebuffer->m_drmFormat;
             cache.failedImageDescriptionId = descriptionId;
-            Log::logger->log(Log::ERR, "hyprion: failed to allocate pixel snapshots for monitor {}", monitor->m_id);
+            LOG(Log::ERR, "hyprion: failed to allocate pixel snapshots for monitor {}", monitor->m_id);
             return false;
         }
 
@@ -684,22 +687,22 @@ class CHyprionPassElement final : public IPassElement {
     CHyprionPassElement(CHyprionDecoration* decoration, float alpha, CBox box, bool outset, bool snapshotOnly = false) :
         m_decoration(decoration), m_alpha(alpha), m_box(box), m_outset(outset), m_snapshotOnly(snapshotOnly) {}
 
-    std::vector<UP<IPassElement>> draw() override {
+    std::vector<UP<IPassElement>> draw(Render::CRenderContext& ctx) override {
         if (m_decoration)
-            m_decoration->drawPass(g_pHyprRenderer->m_renderData.pMonitor.lock(), m_alpha, m_box, m_outset, m_snapshotOnly);
+            m_decoration->drawPass(ctx, m_alpha, m_box, m_outset, m_snapshotOnly);
         return {};
     }
 
-    bool needsLiveBlur() override { return snapshotUsesBlur() && !outsetSnapshotUsesCache(); }
-    bool needsPrecomputeBlur() override { return snapshotUsesBlur() && outsetSnapshotUsesCache(); }
+    bool needsLiveBlur(Render::CRenderContext& ctx) override { return snapshotUsesBlur() && !outsetSnapshotUsesCache(ctx); }
+    bool needsPrecomputeBlur(Render::CRenderContext& ctx) override { return snapshotUsesBlur() && outsetSnapshotUsesCache(ctx); }
     const char* passName() override { return "hyprion"; }
     ePassElementType type() override { return EK_CUSTOM; }
-    std::optional<CBox> boundingBox() override { return m_box; }
-    bool disableSimplification() override { return true; }
+    std::optional<CBox> boundingBox(Render::CRenderContext&) override { return m_box; }
+    bool disableSimplification(Render::CRenderContext&) override { return true; }
 
   private:
     bool snapshotUsesBlur() const { return m_outset && m_snapshotOnly && hyprionConfig().outsetBlur; }
-    bool outsetSnapshotUsesCache() const { return m_decoration && outsetUsesSharedBlur(m_decoration->m_window.lock()); }
+    bool outsetSnapshotUsesCache(Render::CRenderContext& ctx) const { return m_decoration && outsetUsesSharedBlur(ctx, m_decoration->m_window.lock()); }
 
     CHyprionDecoration* m_decoration = nullptr;
     float            m_alpha = 1.F;
@@ -709,8 +712,9 @@ class CHyprionPassElement final : public IPassElement {
 };
 
 CHyprionDecoration::CHyprionDecoration(PHLWINDOW window) :
-    IHyprWindowDecoration(window), m_window(window), m_animations{CHyprionAnimation(Desktop::focusState()->window() == window, window->m_isUrgent),
-        CHyprionAnimation(Desktop::focusState()->window() == window, window->m_isUrgent)} {
+    IHyprWindowDecoration(window), m_window(window),
+    m_animations{CHyprionAnimation(Desktop::focusState()->window() == window, (window->m_hints & Desktop::View::WINDOW_HINT_URGENT) != Desktop::View::WINDOW_HINT_NONE),
+        CHyprionAnimation(Desktop::focusState()->window() == window, (window->m_hints & Desktop::View::WINDOW_HINT_URGENT) != Desktop::View::WINDOW_HINT_NONE)} {
     for (auto& animation : m_animations)
         animation.bind(window);
 }
@@ -760,7 +764,8 @@ void CHyprionDecoration::resetAnimation(bool focused, bool urgent, CHyprionAnima
 SDecorationPositioningInfo CHyprionDecoration::getPositioningInfo() {
     const auto window = m_window.lock();
     const auto config = hyprionConfig();
-    const bool decorated = window && Fullscreen::controller()->getFullscreenModes(window).internal != Fullscreen::FSMODE_FULLSCREEN && window->m_ruleApplicator->decorate().valueOrDefault() && !window->m_X11DoesntWantBorders;
+    const bool decorated = window && Fullscreen::controller()->getFullscreenModes(window).internal != Fullscreen::FSMODE_FULLSCREEN && window->m_ruleApplicator->decorate().valueOrDefault() &&
+        !window->backend().traits().suggestsNoBorder;
     const int extent = decorated && config.enabled && config.outset.enabled ? config.outset.size : 0;
     SDecorationPositioningInfo info;
     info.policy = DECORATION_POSITION_ABSOLUTE;
@@ -776,17 +781,14 @@ void CHyprionDecoration::onPositioningReply(const SDecorationPositioningReply&) 
     damageEntire();
 }
 
-CBox CHyprionDecoration::monitorLocalBox(PHLMONITOR monitor) const {
+CBox CHyprionDecoration::monitorLocalBox(PHLMONITOR monitor, const Render::SWindowRenderPresentation& presentation) const {
     const auto window = m_window.lock();
     if (!window || !monitor)
         return {};
 
-    const auto workspace = window->m_workspace;
-    const auto workspaceOffset = workspace && !window->m_pinned ? workspace->m_renderOffset->value() : Vector2D();
-
     // Decoration assignments include preceding outer outlines; sample the surface itself.
     CBox box = window->getWindowMainSurfaceBox();
-    box.translate(window->m_floatingOffset - monitor->m_position + workspaceOffset);
+    box.translate(presentation.floatingOffset + presentation.workspaceOffset - monitor->m_position);
     return box;
 }
 void CHyprionDecoration::updateOrbitArcTable(float power) {
@@ -817,44 +819,45 @@ void CHyprionDecoration::updateOrbitArcTable(float power) {
 }
 
 
-void CHyprionDecoration::draw(PHLMONITOR monitor, float const& alpha) {
+void CHyprionDecoration::draw(Render::CRenderContext& ctx, PHLMONITOR monitor, float const& alpha, const Render::SWindowRenderPresentation& presentation) {
     const auto window = m_window.lock();
     const auto config = hyprionConfig();
-    if (!window || !window->m_isMapped || !monitor || !config.enabled || !std::isfinite(alpha) || alpha <= 0.0F)
+    if (!window || !validMapped(window) || !monitor || !config.enabled || !std::isfinite(alpha) || alpha <= 0.0F)
         return;
-    const auto box = monitorLocalBox(monitor);
+    const auto box = monitorLocalBox(monitor, presentation);
     if (box.width <= 0.0 || box.height <= 0.0)
         return;
     // Consume the pre-shadow snapshot before inset rendering reuses the cache.
     if (config.outset.enabled)
-        g_pHyprRenderer->m_renderPass.add(makeUnique<CHyprionPassElement>(this, alpha, box.copy().expand(config.outset.size), true));
+        g_pHyprRenderer->addPassElement(ctx, makeUnique<CHyprionPassElement>(this, alpha, box.copy().expand(config.outset.size), true));
     if (config.inset.enabled)
-        g_pHyprRenderer->m_renderPass.add(makeUnique<CHyprionPassElement>(this, alpha, box, false));
+        g_pHyprRenderer->addPassElement(ctx, makeUnique<CHyprionPassElement>(this, alpha, box, false));
 }
 
-void CHyprionDecoration::drawOutset(PHLMONITOR monitor, float alpha) {
+void CHyprionDecoration::drawOutset(Render::CRenderContext& ctx, PHLMONITOR monitor, float alpha, const Render::SWindowRenderPresentation& presentation) {
     const auto window = m_window.lock();
     const auto config = hyprionConfig();
-    if (!window || !window->m_isMapped || !monitor || !config.enabled || !config.outset.enabled || !std::isfinite(alpha) || alpha <= 0.F)
+    if (!window || !validMapped(window) || !monitor || !config.enabled || !config.outset.enabled || !std::isfinite(alpha) || alpha <= 0.F)
         return;
-    auto box = monitorLocalBox(monitor);
+    auto box = monitorLocalBox(monitor, presentation);
     box.expand(config.outset.size);
     if (box.width > 0.0 && box.height > 0.0)
-        g_pHyprRenderer->m_renderPass.add(makeUnique<CHyprionPassElement>(this, alpha, box, true, true));
+        g_pHyprRenderer->addPassElement(ctx, makeUnique<CHyprionPassElement>(this, alpha, box, true, true));
 }
-void CHyprionDecoration::drawPass(PHLMONITOR monitor, float alpha, const CBox& monitorLocalBox_, bool outset, bool snapshotOnly) {
+void CHyprionDecoration::drawPass(Render::CRenderContext& ctx, float alpha, const CBox& monitorLocalBox_, bool outset, bool snapshotOnly) {
     if (snapshotOnly)
         m_outsetSnapshotReady = false;
     else if (outset && !m_outsetSnapshotReady)
         return;
+    const auto monitor = ctx.m_data.pMonitor.lock();
     if (!monitor || !g_pHyprRenderer || !g_pHyprOpenGL)
         return;
     if (!shader && !initializeHyprionRenderer())
         return;
 
-    auto& renderData = g_pHyprRenderer->m_renderData;
+    auto& renderData = ctx.m_data;
     const auto window = m_window.lock();
-    if (!window || !window->m_isMapped || renderData.damage.empty() || !renderData.currentFB)
+    if (!window || !validMapped(window) || renderData.damage.empty() || !renderData.currentFB)
         return;
     const auto config = hyprionConfig();
     const auto& profile = outset ? config.outset : config.inset;
@@ -904,11 +907,11 @@ void CHyprionDecoration::drawPass(PHLMONITOR monitor, float alpha, const CBox& m
     const double boundedThickness = std::clamp(requestedThickness, 1.0, static_cast<double>(maximumStrip));
     const int thickness = static_cast<int>(boundedThickness);
 
-    const double surfaceRounding = std::max(0.0, static_cast<double>(window->rounding()) * monitorScale - 1.0) * modificationScale;
-    const float roundingPower = std::clamp(std::isfinite(window->roundingPower()) ? window->roundingPower() : 2.0F, 1.0F, 10.0F);
+    const double surfaceRounding = std::max(0.0, static_cast<double>(window->presentation().rounding()) * monitorScale - 1.0) * modificationScale;
+    const float roundingPower = std::clamp(std::isfinite(window->presentation().roundingPower()) ? window->presentation().roundingPower() : 2.0F, 1.0F, 10.0F);
     // Native borders expand the radius along with the box, with a correction for
     // powers below two (CHyprBorderDecoration::draw).
-    const double baseRounding = static_cast<double>(window->rounding()) * monitorScale * modificationScale;
+    const double baseRounding = static_cast<double>(window->presentation().rounding()) * monitorScale * modificationScale;
     const double correction = thickness * (std::sqrt(2.0) - 1.0) * std::max(2.0F - roundingPower, 0.0F);
     const double nativeRounding = outset ? (baseRounding > 0.0 ? baseRounding + thickness - correction : 0.0) : surfaceRounding;
     if (!std::isfinite(nativeRounding))
@@ -950,12 +953,12 @@ void CHyprionDecoration::drawPass(PHLMONITOR monitor, float alpha, const CBox& m
     // is reallocated between them, so the cache framebuffer is the reference for
     // either branch and only the snapshot pass runs the blur.
     auto snapshotFramebuffer = framebuffer;
-    SP<ITexture> liveBlurTexture;
+    SP<IFramebuffer> liveBlurFramebuffer;
     if (outset && config.outsetBlur) {
         // Hyprland's own choice for this window: tiled windows (with
         // new_optimizations) and xray rules read the shared pre-window cache,
         // everything else blurs the framebuffer as it stands.
-        const bool sharedCache = outsetUsesSharedBlur(window);
+        const bool sharedCache = outsetUsesSharedBlur(ctx, window);
         snapshotFramebuffer = monitor->resources()->m_blurFB;
         if (!snapshotFramebuffer || !snapshotFramebuffer->getTexture() || snapshotFramebuffer->m_size != framebuffer->m_size)
             return;
@@ -965,8 +968,8 @@ void CHyprionDecoration::drawPass(PHLMONITOR monitor, float alpha, const CBox& m
                     return;
             } else {
                 CRegion blurDamage = renderData.damage.copy().intersect(renderBox);
-                liveBlurTexture = g_pHyprRenderer->blurMainFramebuffer(1.F, &blurDamage);
-                if (!liveBlurTexture || liveBlurTexture->m_size != framebuffer->m_size)
+                liveBlurFramebuffer = g_pHyprRenderer->blurMainFramebuffer(ctx, 1.F, blurDamage);
+                if (!liveBlurFramebuffer || !liveBlurFramebuffer->getTexture() || liveBlurFramebuffer->m_size != framebuffer->m_size)
                     return;
             }
         }
@@ -994,6 +997,7 @@ void CHyprionDecoration::drawPass(PHLMONITOR monitor, float alpha, const CBox& m
         // it through a throwaway framebuffer before anything else reuses it.
         GLuint readFramebuffer = glFramebuffer->getFBID();
         GLuint temporaryFramebuffer = 0;
+        const auto liveBlurTexture = liveBlurFramebuffer ? liveBlurFramebuffer->getTexture() : nullptr;
         if (liveBlurTexture && liveBlurTexture->m_texID != 0) {
             glGenFramebuffers(1, &temporaryFramebuffer);
             if (temporaryFramebuffer != 0) {
@@ -1016,15 +1020,15 @@ void CHyprionDecoration::drawPass(PHLMONITOR monitor, float alpha, const CBox& m
     if (outset)
         m_outsetSnapshotReady = false;
 
-    const auto inputSettings = g_pHyprRenderer->getCMSettings(sourceDescription, defaultDescription);
-    const auto outputSettings = g_pHyprRenderer->getCMSettings(defaultDescription, imageDescription);
+    const auto inputSettings = g_pHyprRenderer->getCMSettings(ctx, sourceDescription, defaultDescription);
+    const auto outputSettings = g_pHyprRenderer->getCMSettings(ctx, defaultDescription, imageDescription);
     const float reference = inputSettings.dstRefLuminance;
     if (!std::isfinite(reference) || reference <= 0.0F)
         return;
 
     const auto toDefault = matrixFor(inputSettings.convertMatrix);
     const auto fromDefault = matrixFor(outputSettings.convertMatrix);
-    const auto projection = g_pHyprRenderer->projectBoxToTarget(renderBox);
+    const auto projection = g_pHyprRenderer->projectBoxToTarget(ctx, renderBox);
 
     auto activeShader = g_pHyprOpenGL->useShader(shader);
     activeShader->setUniformMatrix3fv(SHADER_PROJ, 1, GL_TRUE, projection.getMatrix());
@@ -1083,11 +1087,11 @@ void CHyprionDecoration::drawPass(PHLMONITOR monitor, float alpha, const CBox& m
 
     const bool previousBlend = glIsEnabled(GL_BLEND);
     g_pHyprOpenGL->blend(outset);
-    borderRegion.forEachRect([](const auto& rect) {
-        g_pHyprOpenGL->scissor(&rect, g_pHyprRenderer->m_renderData.transformDamage);
+    borderRegion.forEachRect([&](const auto& rect) {
+        g_pHyprOpenGL->scissor(ctx, &rect, renderData.transformDamage);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     });
-    g_pHyprOpenGL->scissor(nullptr);
+    g_pHyprOpenGL->disableScissor();
     g_pHyprOpenGL->blend(previousBlend);
 
     glBindVertexArray(0);
@@ -1115,21 +1119,19 @@ void CHyprionDecoration::updateWindow(PHLWINDOW window) {
 
 void CHyprionDecoration::damageEntire() {
     const auto window = m_window.lock();
-    if (window && window->m_isMapped && g_pHyprRenderer)
+    if (window && validMapped(window) && g_pHyprRenderer)
         g_pHyprRenderer->damageWindow(window);
 }
 void CHyprionDecoration::damageBorder() {
     const auto window = m_window.lock();
-    if (!window || !window->m_isMapped || !g_pHyprRenderer)
+    if (!window || !validMapped(window) || !g_pHyprRenderer)
         return;
 
-    const auto workspace = window->m_workspace;
-    const auto workspaceOffset = workspace && !window->m_pinned ? workspace->m_renderOffset->value() : Vector2D();
     CBox box = window->getWindowMainSurfaceBox();
-    box.translate(window->m_floatingOffset + workspaceOffset);
+    box.translate(window->presentation().floatingOffset() + window->presentation().renderPresentation().workspaceOffset);
 
     const auto config = hyprionConfig();
-    const double borderExtent = static_cast<double>(std::max(config.inset.size, config.outset.size)) + static_cast<double>(window->rounding());
+    const double borderExtent = static_cast<double>(std::max(config.inset.size, config.outset.size)) + static_cast<double>(window->presentation().rounding());
     if (!std::isfinite(borderExtent) || borderExtent <= 0.0 || box.width <= 0.0 || box.height <= 0.0)
         return;
 
@@ -1164,7 +1166,7 @@ bool initializeHyprionRenderer() {
     g_pHyprOpenGL->makeEGLCurrent();
     auto candidate = makeShared<CShader>();
     if (!candidate->createProgram(VERTEX_SHADER, FRAGMENT_SHADER, true, true)) {
-        Log::logger->log(Log::ERR, "hyprion: failed to compile the sampling shader");
+        LOG(Log::ERR, "hyprion: failed to compile the sampling shader");
         return false;
     }
 

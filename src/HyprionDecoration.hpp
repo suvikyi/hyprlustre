@@ -2,7 +2,7 @@
 
 #include "HyprionAnimation.hpp"
 
-#include <hyprland/src/desktop/view/Window.hpp>
+#include <hyprland/src/desktop/view/window/Window.hpp>
 #include <hyprland/src/output/Monitor.hpp>
 #include <hyprland/src/render/decorations/IHyprWindowDecoration.hpp>
 
@@ -19,8 +19,8 @@ class CHyprionDecoration final : public IHyprWindowDecoration {
 
     SDecorationPositioningInfo getPositioningInfo() override;
     void                       onPositioningReply(const SDecorationPositioningReply& reply) override;
-    void                       draw(PHLMONITOR monitor, float const& alpha) override;
-    void                       drawOutset(PHLMONITOR monitor, float alpha);
+    void                       draw(Render::CRenderContext& ctx, PHLMONITOR monitor, float const& alpha, const Render::SWindowRenderPresentation& presentation) override;
+    void                       drawOutset(Render::CRenderContext& ctx, PHLMONITOR monitor, float alpha, const Render::SWindowRenderPresentation& presentation);
     eDecorationType            getDecorationType() override;
     void                       updateWindow(PHLWINDOW window) override;
     void                       damageEntire() override;
@@ -34,8 +34,8 @@ class CHyprionDecoration final : public IHyprWindowDecoration {
     void resetAnimation(bool focused, bool urgent, CHyprionAnimation::Time now);
 
   private:
-    CBox monitorLocalBox(PHLMONITOR monitor) const;
-    void  drawPass(PHLMONITOR monitor, float alpha, const CBox& monitorLocalBox, bool outset, bool snapshotOnly);
+    CBox monitorLocalBox(PHLMONITOR monitor, const Render::SWindowRenderPresentation& presentation) const;
+    void  drawPass(Render::CRenderContext& ctx, float alpha, const CBox& monitorLocalBox, bool outset, bool snapshotOnly);
     void  damageBorder();
     void  updateOrbitArcTable(float power);
 
